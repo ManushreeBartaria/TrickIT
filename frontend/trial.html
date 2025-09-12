@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>TrickIt - Social Media</title>
+  <style>
+    body {
+      background-color: white;
+      color: black;
+      font-family: 'Merriweather', serif;
+    }
+    .header {
+      background-color: #B92B27;
+      color: white;
+      text-align: left;
+      font-size: 24px;
+      font-weight: bold;
+      padding: 0 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 50px;
+    }
+    .nav-links a {
+      color: white;
+      text-decoration: none;
+      margin-left: 15px;
+      font-size: 16px;
+    }
+    .nav-links a:hover {
+      text-decoration: underline;
+    }
+    .container {
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #f5f5f5;
+      border-radius: 8px;
+    }
+    .post-box {
+      width: 100%;
+      padding: 10px;
+      margin-bottom: 10px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .button {
+      background-color: #B92B27;
+      color: white;
+      padding: 10px;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .button:hover {
+      background-color: #92251E;
+    }
+    .posts {
+      max-width: 600px;
+      margin: 20px auto;
+      padding: 20px;
+      background: #fff;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+    }
+    .subscribe-container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .username {
+      font-size: 16px;
+      font-weight: bold;
+    }
+    .subscribe {
+      background-color: #B92B27;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 50px;
+      text-decoration: none;
+      font-size: 14px;
+      white-space: nowrap;
+      cursor: pointer;
+    }
+    .subscribe:hover {
+      background-color: #92251E;
+    }
+    .dialog-box {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.2);
+      width: 300px;
+      z-index: 1001;
+    }
+    .dialog-box textarea,
+    .dialog-box input {
+      width: 100%;
+      margin-top: 10px;
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+    }
+    .dialog-box button {
+      margin-top: 10px;
+    }
+    .close-button {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      position: absolute;
+      top: 10px;
+      right: 10px;
+    }
+    .post-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    
+    #subscriptionModal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      overflow: auto;
+      background-color: rgba(0, 0, 0, 0.5);
+    }
+    .modal-content {
+      background-color: #fff;
+      margin: 10% auto;
+      padding: 20px;
+      border-radius: 10px;
+      width: 300px;
+      text-align: center;
+      position: relative;
+    }
+    .modal-content img {
+      width: 150px;
+      margin-top: 15px;
+      border-radius: 5px;
+    }
+    .modal-content .close {
+      position: absolute;
+      top: 10px;
+      right: 15px;
+      font-size: 24px;
+      cursor: pointer;
+    }
+    .action-buttons {
+        display: flex;
+        gap: 10px;
+      }
+      
+      .report {
+        background-color: #B92B27;
+        color: white;
+        padding: 6px 12px;
+        border: none;
+        border-radius: 50px;
+        font-size: 14px;
+        cursor: pointer;
+      }
+      
+      .report:hover {
+        background-color: #92251E;
+      }
+      
+  </style>
+</head>
+<body>
+  <header class="header">
+    TrickIt
+    <div class="nav-links">
+      <a href="upload.html">What to Upload</a>
+      <a href="Money.html">How to Generate Money</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="subscribe-container">
+      <div class="username">Manushree Bartaria</div>
+      <div class="subscribe" onclick="openSubscriptionDialog('Manushree Bartaria', 'qr-code.png')">Subscribe</div>
+    </div>
+    <div class="post-box" onclick="openDialog()">What's on your mind?</div>
+  </div>
+
+  <div id="dialog" class="dialog-box">
+    <button class="close-button" onclick="closeDialog()">×</button>
+    <textarea id="postText" placeholder="Write a text..."></textarea>
+    <input type="file" id="postFile" />
+    <button class="button" onclick="displayPost()">Post</button>
+  </div>
+
+  <div id="posts" class="posts"></div>
+
+  
+  <div id="subscriptionModal">
+    <div class="modal-content">
+      <span class="close" onclick="closeSubscriptionDialog()">&times;</span>
+      <h3>Subscribe to <span id="personName"></span></h3>
+      <img id="qrCodeImage" src="QR.jpg" alt="QR Code" />
+    </div>
+  </div>
+
+  <script>
+    function openDialog() {
+      document.getElementById("dialog").style.display = "block";
+    }
+
+    function closeDialog() {
+      document.getElementById("dialog").style.display = "none";
+    }
+
+    function displayPost() {
+        var text = document.getElementById("postText").value;
+        var file = document.getElementById("postFile").files[0];
+        var postContainer = document.getElementById("posts");
+        var newPost = document.createElement("div");
+        newPost.style.borderBottom = "1px solid #ccc";
+        newPost.style.padding = "10px";
+      
+        var postHeader = document.createElement("div");
+        postHeader.className = "post-content";
+      
+        var userName = document.createElement("div");
+        userName.textContent = "Manushree Bartaria";
+        userName.style.fontWeight = "bold";
+      
+        var subscribeBtn = document.createElement("div");
+        subscribeBtn.textContent = "Subscribe";
+        subscribeBtn.className = "subscribe";
+        subscribeBtn.onclick = function () {
+          openSubscriptionDialog("Manushree Bartaria", "QR.jpg");
+        };
+      
+        var reportBtn = document.createElement("div");
+        reportBtn.textContent = "Report";
+        reportBtn.className = "report";
+        reportBtn.onclick = function () {
+          if (confirm("Warning: The post content is not correct. Do you want to delete this post?")) {
+            postContainer.removeChild(newPost);
+          }
+        };
+      
+        postHeader.appendChild(userName);
+        postHeader.appendChild(subscribeBtn);
+        postHeader.appendChild(reportBtn);
+        newPost.appendChild(postHeader);
+      
+        if (text) {
+          var textNode = document.createElement("p");
+          textNode.textContent = text;
+          newPost.appendChild(textNode);
+        }
+      
+        if (file) {
+          var fileURL = URL.createObjectURL(file);
+          if (file.type.startsWith("image")) {
+            var img = document.createElement("img");
+            img.src = fileURL;
+            img.style.maxWidth = "100%";
+            img.style.borderRadius = "5px";
+            newPost.appendChild(img);
+          } else if (file.type.startsWith("video")) {
+            var video = document.createElement("video");
+            video.src = fileURL;
+            video.controls = true;
+            video.style.maxWidth = "100%";
+            newPost.appendChild(video);
+          }
+        }
+      
+        postContainer.prepend(newPost);
+        closeDialog();
+      }
+      
+
+
+    function openSubscriptionDialog(name, qrPath) {
+      document.getElementById("personName").textContent = name;
+      document.getElementById("qrCodeImage").src = qrPath;
+      document.getElementById("subscriptionModal").style.display = "block";
+    }
+
+    function closeSubscriptionDialog() {
+      document.getElementById("subscriptionModal").style.display = "none";
+    }
+  </script>
+</body>
+</html>
