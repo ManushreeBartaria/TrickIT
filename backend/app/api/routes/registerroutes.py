@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.database.connections import get_db
 from app.model.registeruser import registeruser,forgotpasswordOTP
 from app.schemas.register import RegisterUser, RegisterResponse, LoginResponse, LoginUser
-from app.schemas.register import forgotpassword,resetpassword,forgotpasswordResponse
+from app.schemas.register import forgotpassword,resetpassword,forgotpasswordResponse,resetpasswordResponse
 import random as rnd
 
 router = APIRouter()
@@ -51,3 +51,16 @@ def forgotpassword(forgot:forgotpassword,db:Session=Depends(get_db)):
     db.refresh(new_otp)
     return {"otp":new_otp.otp}
 
+@router.post("/resetpassword",response_model=resetpasswordResponse)
+def resetpassword(reset:resetpassword,db:Session=Depends(get_db)):
+    user=db.query(forgotpasswordOTP).filter(forgotpasswordOTP.otp==reset.otp).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid otp")
+    passuser=db.query(registeruser).filter(registeruser.id==user.user_id).first()
+    if not passuser:
+        raise HTTPException(status_code=400, detail="Invalid id")
+    passuser.password=reset.newpassword
+    db.delete(user)
+    db.commit()
+    db.refresh(passuser)
+    return  {"msg":"Password Updated Successfully"}

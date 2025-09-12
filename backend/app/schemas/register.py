@@ -50,10 +50,18 @@ class forgotpasswordResponse(BaseModel):
     }
         
 class resetpassword(BaseModel):
+    otp:str
     newpassword: str
-    confirmpassword: str
+
 
     model_config = {
         "from_attributes": True
-    }        
+    }    
+    
+class resetpasswordResponse(BaseModel):
+    msg:str
+    model_config = {
+        "from_attributes": True
+    }    
+      
         
