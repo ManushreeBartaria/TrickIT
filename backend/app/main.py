@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from app.database.connections import Base, engine
 from app.api.routes import registerroutes
-from app.model.registeruser import registeruser
+from app.model.registeruser import registeruser,forgotpasswordOTP
 
 app = FastAPI()
 Base.metadata.create_all(bind=engine)

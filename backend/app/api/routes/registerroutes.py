@@ -1,8 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connections import get_db
-from app.model.registeruser import registeruser
+from app.model.registeruser import registeruser,forgotpasswordOTP
 from app.schemas.register import RegisterUser, RegisterResponse, LoginResponse, LoginUser
+from app.schemas.register import forgotpassword,resetpassword,forgotpasswordResponse
+import random as rnd
 
 router = APIRouter()
 
@@ -33,3 +35,19 @@ def login_user(user: LoginUser, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Invalid email or password")
     
     return {"message": "Login successful"}
+
+@router.post("/forgotpassword",response_model=forgotpasswordResponse)
+def forgotpassword(forgot:forgotpassword,db:Session=Depends(get_db)):
+    user=db.query(registeruser).filter(registeruser.email==forgot.email).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Invalid email")
+    generated_otp=str(rnd.randint(100000, 999999))
+    new_otp=forgotpasswordOTP(
+        user_id=user.id,
+        otp=generated_otp
+    )
+    db.add(new_otp)
+    db.commit()
+    db.refresh(new_otp)
+    return {"otp":new_otp.otp}
+

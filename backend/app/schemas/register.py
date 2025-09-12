@@ -35,3 +35,25 @@ class LoginResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }        
+    
+class forgotpassword(BaseModel):
+    email: EmailStr
+
+    model_config = {
+        "from_attributes": True
+    }
+    
+class forgotpasswordResponse(BaseModel):
+        otp:str
+        model_config = {
+        "from_attributes": True
+    }
+        
+class resetpassword(BaseModel):
+    newpassword: str
+    confirmpassword: str
+
+    model_config = {
+        "from_attributes": True
+    }        
+        
