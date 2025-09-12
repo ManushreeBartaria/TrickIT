@@ -20,3 +20,18 @@ class RegisterResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }    
+    
+class LoginUser(BaseModel):
+    email: EmailStr
+    password: str
+
+    model_config = {
+        "from_attributes": True
+    }
+    
+class LoginResponse(BaseModel):
+    message: str
+
+    model_config = {
+        "from_attributes": True
+    }        
