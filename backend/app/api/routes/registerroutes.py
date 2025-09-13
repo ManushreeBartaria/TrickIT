@@ -5,8 +5,20 @@ from app.model.registeruser import registeruser,forgotpasswordOTP
 from app.schemas.register import RegisterUser, RegisterResponse, LoginResponse, LoginUser
 from app.schemas.register import forgotpassword,resetpassword,forgotpasswordResponse,resetpasswordResponse
 import random as rnd
+from fastapi.security import OAuth2PasswordBearer
+from jose import jwt, JWTError
+from app.utils.security import create_access_token,verify_access_token
 
 router = APIRouter()
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+SECRET_KEY = "your_secret_key"
+ALGORITHM = "HS256"
+def get_current_user(token: str = Depends(oauth2_scheme)):
+    payload = verify_access_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    return payload
 
 @router.post("/register", response_model=RegisterResponse)
 def register_user(user: RegisterUser, db: Session = Depends(get_db)):
@@ -33,8 +45,8 @@ def login_user(user: LoginUser, db: Session = Depends(get_db)):
     ).first()
     if not existing_user:
         raise HTTPException(status_code=400, detail="Invalid email or password")
-    
-    return {"message": "Login successful"}
+    access_token = create_access_token({"user_id":existing_user.id})
+    return {"message": "Login successful","access_token": access_token, "token_type": "bearer"}
 
 @router.post("/forgotpassword",response_model=forgotpasswordResponse)
 def forgotpassword(forgot:forgotpassword,db:Session=Depends(get_db)):
