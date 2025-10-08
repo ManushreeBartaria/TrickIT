@@ -1,3 +1,4 @@
+import profile
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 from datetime import date
@@ -66,4 +67,24 @@ class resetpasswordResponse(BaseModel):
         "from_attributes": True
     }    
       
-        
+class userprofileResponse(BaseModel):
+    username: str
+    about: Optional[str] = None
+    profile_picture: Optional[str] = None
+    message: Optional[str] = None
+    
+    model_config = {
+        "from_attributes": True
+    } 
+    
+class postsResponse(BaseModel):
+    id: Optional[int] = None
+    username: str
+    profile_picture: Optional[str] = None
+    about: Optional[str] = None
+    content: Optional[str] = None
+    media_url: Optional[str] = None
+    
+    model_config = {
+        "from_attributes": True
+    }    
