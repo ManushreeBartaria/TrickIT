@@ -15,10 +15,21 @@ from app.utils.security import create_access_token, verify_access_token
 import os
 import shutil
 import uuid
-
+import joblib
+import sklearn
 
 router = APIRouter()
+
 UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads"))
+
+BASE_DIR = os.path.dirname(__file__)
+MODEL_DIR = os.path.join(BASE_DIR, "..","..", "ml_model")
+print(MODEL_DIR)
+model_path = os.path.abspath(os.path.join(MODEL_DIR, "model.pkl"))
+vector_path= os.path.abspath(os.path.join(MODEL_DIR, "vectorizer.pkl"))
+
+vector=joblib.load(vector_path)
+model=joblib.load(model_path)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 SECRET_KEY = "hackathon-secret-key"
@@ -175,14 +186,17 @@ async def create_post(
     try:
         
         user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
-        
-    
-        new_post = posts(
-            user_id=user.id,
-            content=content,
-            media_url=None,
-            media_type=None
-        )
+        vector_matrix=vector.transform([content])
+        output=model.predict(vector_matrix)
+        if(output=='educational'):
+              new_post = posts(
+                 user_id=user.id,
+                 content=content,
+                 media_url=None,
+                 media_type=None
+            )
+        else:
+                raise HTTPException(status_code=400, detail="Inappropriate content")      
         
         if media:
             os.makedirs(UPLOAD_DIR, exist_ok=True)
