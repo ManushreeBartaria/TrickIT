@@ -1,25 +1,26 @@
 # TrickIT - Social Media Platform
 
-A modern social media platform built with FastAPI backend and React frontend.
+A modern and secure social media platform built with FastAPI backend and React frontend, featuring user authentication, profile management, and media sharing capabilities.
 
 ## Features
 
-- User Authentication
-  - Registration with email and password
-  - Login with JWT authentication
+- User Authentication & Security
+  - Secure registration with email and password
+  - JWT-based authentication system
   - Forgot password with OTP verification
-  - Reset password functionality
+  - Password reset functionality
+  - CORS protection for API endpoints
 
-- User Profiles
-  - Customizable profile pictures
-  - About me section
-  - View other users' profiles
+- File Management
+  - Secure file upload system
+  - Media storage in dedicated uploads directory
+  - Static file serving for uploaded content
 
-- Posts
-  - Create text posts
-  - Upload media (images)
-  - View posts from all users
-  - Timeline view with latest posts first
+- API Features
+  - RESTful API architecture
+  - Health check endpoint
+  - Modular routing system
+  - Database ORM integration
 
 ## Tech Stack
 
@@ -28,13 +29,22 @@ A modern social media platform built with FastAPI backend and React frontend.
 - SQLAlchemy (ORM)
 - MySQL (via XAMPP)
 - JWT for authentication
-- Python-multipart for file uploads
+- Static file handling with FastAPI
+- CORS middleware for security
+- Machine Learning Model Integration
+
+### ML Components
+- Machine Learning model integration
+- Model inference endpoints
+- Data processing pipelines
 
 ### Frontend
-- React
-- React Router for navigation
-- Axios for API calls
-- Tailwind CSS for styling
+- React 19.2.0
+- React Router DOM 7.9.3 for navigation
+- Axios 1.12.2 for API calls
+- Material-UI (@mui/material)
+- Tailwind CSS 3.3.0 for styling
+- Modern testing setup with Jest and React Testing Library
 
 ## Setup Instructions
 
@@ -60,11 +70,19 @@ A modern social media platform built with FastAPI backend and React frontend.
    pip install -r requirements.txt
    ```
 
-5. Start the FastAPI server:
+5. Set up ML Model dependencies:
+   ```bash
+   pip install scikit-learn pandas numpy
+   ```
+
+6. Start the FastAPI server:
    ```bash
    uvicorn app.main:app --reload
    ```
    Server will run on http://localhost:8000
+
+### ML Model
+The project includes a machine learning component in the `app/ml_model/` directory that integrates with the main application.
 
 ### Frontend Setup
 
@@ -91,31 +109,37 @@ TrickIT/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
-│   │   │   └── routes/
 │   │   ├── database/
 │   │   ├── model/
+│   │   ├── ml_model/
 │   │   ├── schemas/
 │   │   ├── utils/
-│   │   └── uploads/
-│   └── main.py
+│   │   ├── uploads/
+│   │   ├── main.py
+│   │   └── __pycache__/
 └── frontend/
+    ├── node_modules/
     ├── public/
-    └── src/
-        ├── components/
-        ├── services/
-        └── styles/
+    ├── src/
+    ├── .gitignore
+    ├── package.json
+    ├── package-lock.json
+    ├── postcss.config.js
+    └── tailwind.config.js
 ```
 
 ## API Endpoints
 
-- `POST /api/register` - User registration
-- `POST /api/login` - User login
-- `POST /api/forgotpassword` - Request password reset OTP
-- `POST /api/resetpassword` - Reset password with OTP
-- `GET /api/loadprofile` - Get user profile
-- `PUT /api/update-profile` - Update user profile
-- `POST /api/posts` - Create new post
-- `GET /api/posts` - Get all posts
+### Base URL: http://localhost:8000
+
+### Public Endpoints
+- `GET /` - Health check endpoint, returns "Hello World"
+
+### API Routes (prefix: /api)
+All API routes are prefixed with `/api` and tagged as "register"
+
+### Static Files
+- `/uploads/*` - Serves static files from the uploads directory
 
 ## Environment Setup
 
