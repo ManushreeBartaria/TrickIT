@@ -77,8 +77,6 @@ def register_user(user: RegisterUser, db: Session = Depends(get_db)):
             profile_pic=None
         )
         db.add(new_profile)
-        
-        # Commit both changes
         db.commit()
         db.refresh(new_user)
         return {

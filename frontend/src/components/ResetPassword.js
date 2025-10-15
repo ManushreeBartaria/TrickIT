@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/api';
+import { isValidPassword, getPasswordValidationMessage } from '../utils/validation';
 
 const styles = {
     container: {
@@ -10,6 +11,21 @@ const styles = {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '20px',
+    },
+    passwordContainer: {
+        position: 'relative',
+        width: '100%',
+    },
+    passwordToggle: {
+        position: 'absolute',
+        right: '10px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        cursor: 'pointer',
+        border: 'none',
+        background: 'none',
+        color: '#000',
+        padding: '4px',
     },
     formCard: {
         backgroundColor: '#fff',
@@ -73,29 +89,43 @@ const ResetPassword = () => {
     });
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [showNewPassword, setShowNewPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const navigate = useNavigate();
+
+    // Remove warning about unused variables
+    const toggleNewPassword = () => setShowNewPassword(!showNewPassword);
+    const toggleConfirmPassword = () => setShowConfirmPassword(!showConfirmPassword);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // Validate passwords match
+        
+        if (!isValidPassword(formData.newPassword)) {
+            setError(getPasswordValidationMessage());
+            return;
+        }
+
+    
         if (formData.newPassword !== formData.confirmPassword) {
             setError('Passwords do not match');
             return;
         }
 
         try {
-            const response = await authService.resetPassword({
+            await authService.resetPassword({
                 otp: formData.otp,
                 newpassword: formData.newPassword,
             });
+            setError(''); 
             setSuccess('Password reset successful! Redirecting to login...');
-            // Clear stored email
+            
             localStorage.removeItem('resetEmail');
             setTimeout(() => {
                 navigate('/login');
             }, 2000);
         } catch (error) {
+            setSuccess(''); 
             setError(error.response?.data?.detail || 'Error resetting password');
         }
     };
@@ -121,24 +151,48 @@ const ResetPassword = () => {
                         style={styles.input}
                         required
                     />
-                    <input
-                        type="password"
-                        name="newPassword"
-                        placeholder="New Password"
-                        value={formData.newPassword}
-                        onChange={handleChange}
-                        style={styles.input}
-                        required
-                    />
-                    <input
-                        type="password"
-                        name="confirmPassword"
-                        placeholder="Confirm New Password"
-                        value={formData.confirmPassword}
-                        onChange={handleChange}
-                        style={styles.input}
-                        required
-                    />
+                    <div style={styles.passwordContainer}>
+                        <input
+                            type={showNewPassword ? "text" : "password"}
+                            name="newPassword"
+                            placeholder="New Password"
+                            minLength={9}
+                            title={getPasswordValidationMessage()}
+                            value={formData.newPassword}
+                            onChange={handleChange}
+                            style={styles.input}
+                            required
+                        />
+                        <button
+                            type="button"
+                            style={styles.passwordToggle}
+                            onClick={toggleNewPassword}
+                            tabIndex="-1"
+                            aria-label={showNewPassword ? "Hide password" : "Show password"}
+                        >                            {showNewPassword ? "Hide" : "Show"}</button>
+                    </div>
+                    <div style={styles.passwordContainer}>
+                        <input
+                            type={showConfirmPassword ? "text" : "password"}
+                            name="confirmPassword"
+                            placeholder="Confirm New Password"
+                            minLength={9}
+                            title="Must match the password above"
+                            value={formData.confirmPassword}
+                            onChange={handleChange}
+                            style={styles.input}
+                            required
+                        />
+                        <button
+                            type="button"
+                            style={styles.passwordToggle}
+                            onClick={toggleConfirmPassword}
+                            tabIndex="-1"
+                            aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                        >
+                            {showConfirmPassword ? "Hide" : "Show"}
+                        </button>
+                    </div>
                     <button type="submit" style={styles.button}>
                         Reset Password
                     </button>

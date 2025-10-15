@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { authService } from '../services/api';
 import { colors } from '../styles/colors';
+import { isValidEmail, isValidPassword, getEmailValidationMessage, getPasswordValidationMessage } from '../utils/validation';
 
 const styles = {
     container: {
@@ -10,6 +11,22 @@ const styles = {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
+    },
+    passwordContainer: {
+        position: 'relative',
+        width: '100%',
+        marginBottom: '1rem',
+    },
+    passwordToggle: {
+        position: 'absolute',
+        right: '10px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        cursor: 'pointer',
+        border: 'none',
+        background: 'none',
+        color: colors.text,
+        padding: '4px',
     },
     formContainer: {
         backgroundColor: colors.white,
@@ -65,17 +82,30 @@ const styles = {
 const Login = () => {
     const [credentials, setCredentials] = useState({ email: '', password: '' });
     const [error, setError] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        
+
+        if (!isValidEmail(credentials.email)) {
+            setError(getEmailValidationMessage());
+            return;
+        }
+
+        if (!isValidPassword(credentials.password)) {
+            setError(getPasswordValidationMessage());
+            return;
+        }
+
         try {
             const response = await authService.login(credentials);
-            console.log('Login response:', response.data); // Add this debug line
+            console.log('Login response:', response.data);
             localStorage.setItem('token', `Bearer ${response.data.access_token}`);
             navigate('/dashboard');
         } catch (err) {
-            console.error('Login error:', err.response?.data); // Add this debug line
+            console.error('Login error:', err.response?.data);
             setError(err.response?.data?.detail || 'Login failed');
         }
     };
@@ -98,19 +128,34 @@ const Login = () => {
                         type="email"
                         name="email"
                         placeholder="Email"
+                        pattern="^[a-zA-Z][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+                        title={getEmailValidationMessage()}
                         value={credentials.email}
                         onChange={handleChange}
                         required
                     />
-                    <input
-                        style={styles.input}
-                        type="password"
-                        name="password"
-                        placeholder="Password"
-                        value={credentials.password}
-                        onChange={handleChange}
-                        required
-                    />
+                    <div style={styles.passwordContainer}>
+                        <input
+                            style={styles.input}
+                            type={showPassword ? "text" : "password"}
+                            name="password"
+                            minLength={9}
+                            title={getPasswordValidationMessage()}
+                            placeholder="Password"
+                            value={credentials.password}
+                            onChange={handleChange}
+                            required
+                        />
+                        <button
+                            type="button"
+                            style={styles.passwordToggle}
+                            onClick={() => setShowPassword(!showPassword)}
+                            tabIndex="-1"
+                            aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                            {showPassword ? "👁️" : "👁️‍🗨️"}
+                        </button>
+                    </div>
                     <button type="submit" style={styles.button}>
                         Sign in
                     </button>

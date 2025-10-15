@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authService } from '../services/api';
+import { isValidEmail, getEmailValidationMessage } from '../utils/validation';
 
 const styles = {
     container: {
@@ -85,15 +86,22 @@ const ForgotPassword = () => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+
+        if (!isValidEmail(email)) {
+            setError(getEmailValidationMessage());
+            return;
+        }
+
         try {
-            const response = await authService.forgotPassword(email);
+            await authService.forgotPassword(email);
+            setError(''); 
             setSuccess('OTP has been sent to your email. Please check your inbox.');
-            // Store email for reset password page
             localStorage.setItem('resetEmail', email);
             setTimeout(() => {
                 navigate('/reset-password');
             }, 2000);
         } catch (error) {
+            setSuccess(''); 
             setError(error.response?.data?.detail || 'Error sending OTP');
         }
     };
@@ -108,6 +116,8 @@ const ForgotPassword = () => {
                         placeholder="Enter your email"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
+                        pattern="^[a-zA-Z][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+                        title={getEmailValidationMessage()}
                         style={styles.input}
                         required
                     />
