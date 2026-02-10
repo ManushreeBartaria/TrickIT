@@ -45,3 +45,5 @@ coverage.xml
 *.egg-info/
 dist/
 build/
+*.pkl
+uploads/

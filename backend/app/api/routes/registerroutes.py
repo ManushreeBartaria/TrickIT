@@ -25,8 +25,10 @@ UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.pat
 BASE_DIR = os.path.dirname(__file__)
 MODEL_DIR = os.path.join(BASE_DIR, "..","..", "ml_model")
 print(MODEL_DIR)
-model_path = os.path.abspath(os.path.join(MODEL_DIR, "model.pkl"))
+model_path = os.path.abspath(os.path.join(MODEL_DIR, "lr_model.pkl"))
 vector_path= os.path.abspath(os.path.join(MODEL_DIR, "vectorizer.pkl"))
+selector_path = os.path.abspath(os.path.join(MODEL_DIR, "chi_selector.pkl"))
+selector = joblib.load(selector_path)
 
 vector=joblib.load(vector_path)
 model=joblib.load(model_path)
@@ -184,17 +186,38 @@ async def create_post(
     try:
         
         user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
-        vector_matrix=vector.transform([content])
-        output=model.predict(vector_matrix)
-        if(output=='educational'):
-              new_post = posts(
-                 user_id=user.id,
-                 content=content,
-                 media_url=None,
-                 media_type=None
+
+        vector_matrix = vector.transform([content])
+        vector_matrix = selector.transform(vector_matrix)
+
+        probs = model.predict_proba(vector_matrix)
+
+        classes = model.classes_.tolist()
+        edu_index = classes.index('educational')
+
+        educational_prob = probs[0][edu_index]
+        if educational_prob >= 0.55:
+                new_post = posts(
+                    user_id=user.id,
+                    content=content,
+                    media_url=None,
+                    media_type=None
+                )
+
+        elif educational_prob >= 0.40:
+            new_post = posts(
+                user_id=user.id,
+                content=content,
+                media_url=None,
+                media_type=None
             )
+            print("Borderline educational content:", educational_prob)
         else:
-                raise HTTPException(status_code=400, detail="Inappropriate content")      
+            raise HTTPException(
+                status_code=400,
+                detail=f"Inappropriate content (confidence={educational_prob:.2f})"
+            )
+
         
         if media:
             os.makedirs(UPLOAD_DIR, exist_ok=True)
