@@ -309,7 +309,6 @@ async def report_post(
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
-        # Prevent duplicate reports from same user
         existing_report = db.query(post_reports).filter(
             post_reports.post_id == post_id,
             post_reports.reporter_user_id == current_user.user_id
@@ -318,18 +317,15 @@ async def report_post(
         if existing_report:
             raise HTTPException(status_code=400, detail="You have already reported this post")
 
-        # Record the report
         new_report = post_reports(
             post_id=post_id,
             reporter_user_id=current_user.user_id
         )
         db.add(new_report)
 
-        # Increment count
         post.report_count = (post.report_count or 0) + 1
         db.commit()
 
-        # Auto-delete post and media file when report count hits 3
         if post.report_count >= 3:
             if post.media_url:
                 media_filename = post.media_url.split("/uploads/")[-1]
@@ -350,7 +346,6 @@ async def report_post(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# NEW ENDPOINT
 @router.post("/posts/{post_id}/subscribe", response_model=subscribeResponse)
 async def toggle_subscribe(
     post_id: int,
@@ -362,7 +357,6 @@ async def toggle_subscribe(
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
-        # Block self-subscription
         if post.user_id == current_user.user_id:
             raise HTTPException(status_code=400, detail="You cannot subscribe to your own posts")
 
@@ -372,12 +366,10 @@ async def toggle_subscribe(
         ).first()
 
         if existing_sub:
-            # Already subscribed — toggle off
             db.delete(existing_sub)
             db.commit()
             return {"message": "Unsubscribed successfully", "is_subscribed": False}
         else:
-            # Not subscribed — subscribe
             new_sub = subscriptions(
                 subscriber_user_id=current_user.user_id,
                 subscribed_to_user_id=post.user_id
@@ -390,4 +382,118 @@ async def toggle_subscribe(
         raise
     except Exception as e:
         db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/posts", response_model=postsResponse)
+async def create_post(
+    content: str = Form(...),
+    media: UploadFile = File(None),
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
+
+        vector_matrix = vector.transform([content])
+        vector_matrix = selector.transform(vector_matrix)
+
+        probs = model.predict_proba(vector_matrix)
+
+        classes = model.classes_.tolist()
+        edu_index = classes.index('educational')
+
+        educational_prob = probs[0][edu_index]
+        if educational_prob >= 0.55:
+            new_post = posts(
+                user_id=user.id,
+                content=content,
+                media_url=None,
+                media_type=None
+            )
+        elif educational_prob >= 0.40:
+            new_post = posts(
+                user_id=user.id,
+                content=content,
+                media_url=None,
+                media_type=None
+            )
+            print("Borderline educational content:", educational_prob)
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Inappropriate content (confidence={educational_prob:.2f})"
+            )
+
+        if media:
+            os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+            file_extension = os.path.splitext(media.filename)[1]
+            filename = f"post_{uuid.uuid4()}{file_extension}"
+            file_path = os.path.join(UPLOAD_DIR, filename)
+
+            contents = await media.read()
+            with open(file_path, "wb") as f:
+                f.write(contents)
+
+            new_post.media_url = f"/uploads/{filename}"
+            new_post.media_type = media.content_type
+
+        db.add(new_post)
+        db.commit()
+        db.refresh(new_post)
+
+        return {
+            "id": new_post.id,
+            "username": user.username,
+            "profile_picture": current_user.profile_pic,
+            "about": current_user.about or "",
+            "content": new_post.content,
+            "media_url": new_post.media_url,
+            "report_count": 0,
+            "is_reported": False,
+            "is_subscribed": False,
+        }
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/posts", response_model=List[postsResponse])
+async def get_posts(
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        all_posts = db.query(posts).order_by(posts.id.desc()).all()
+
+        posts_data = []
+        for post in all_posts:
+            user = db.query(registeruser).filter(registeruser.id == post.user_id).first()
+            profile = db.query(userprofile).filter(userprofile.user_id == user.id).first()
+
+            already_reported = db.query(post_reports).filter(
+                post_reports.post_id == post.id,
+                post_reports.reporter_user_id == current_user.user_id
+            ).first() is not None
+
+            already_subscribed = db.query(subscriptions).filter(
+                subscriptions.subscriber_user_id == current_user.user_id,
+                subscriptions.subscribed_to_user_id == post.user_id
+            ).first() is not None
+
+            posts_data.append({
+                "id": post.id,
+                "username": user.username,
+                "profile_picture": profile.profile_pic if profile else None,
+                "about": profile.about if profile else "",
+                "content": post.content,
+                "media_url": post.media_url,
+                "report_count": post.report_count,
+                "is_reported": already_reported,
+                "is_subscribed": already_subscribed,
+            })
+
+        return posts_data
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

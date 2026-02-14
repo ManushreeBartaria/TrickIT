@@ -35,8 +35,6 @@ export const authService = {
         });
     },
     getPosts: () => api.get('/api/posts'),
-    reportPost: (postId) => api.post(`/api/posts/${postId}/report`),      // NEW
-    subscribePost: (postId) => api.post(`/api/posts/${postId}/subscribe`), // NEW
 };
 
 api.interceptors.request.use(

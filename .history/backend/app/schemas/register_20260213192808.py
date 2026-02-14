@@ -20,8 +20,8 @@ class RegisterResponse(BaseModel):
 
     model_config = {
         "from_attributes": True
-    }
-
+    }    
+    
 class LoginUser(BaseModel):
     email: EmailStr
     password: str
@@ -29,53 +29,54 @@ class LoginUser(BaseModel):
     model_config = {
         "from_attributes": True
     }
-
+    
 class LoginResponse(BaseModel):
     message: str
-    access_token: str
-    token_type: str
+    access_token:str
+    token_type:str
 
     model_config = {
         "from_attributes": True
-    }
-
+    }        
+    
 class forgotpassword(BaseModel):
     email: EmailStr
 
     model_config = {
         "from_attributes": True
     }
-
+    
 class forgotpasswordResponse(BaseModel):
-    otp: str
-    model_config = {
+        otp:str
+        model_config = {
         "from_attributes": True
     }
-
+        
 class resetpassword(BaseModel):
-    otp: str
+    otp:str
     newpassword: str
 
+
     model_config = {
         "from_attributes": True
-    }
-
+    }    
+    
 class resetpasswordResponse(BaseModel):
-    msg: str
+    msg:str
     model_config = {
         "from_attributes": True
-    }
-
+    }    
+      
 class userprofileResponse(BaseModel):
     username: str
     about: Optional[str] = None
     profile_picture: Optional[str] = None
     message: Optional[str] = None
-
+    
     model_config = {
         "from_attributes": True
-    }
-
+    } 
+    
 class postsResponse(BaseModel):
     id: Optional[int] = None
     username: str
@@ -83,27 +84,7 @@ class postsResponse(BaseModel):
     about: Optional[str] = None
     content: Optional[str] = None
     media_url: Optional[str] = None
-    report_count: Optional[int] = 0       # NEW
-    is_subscribed: Optional[bool] = False  # NEW
-    is_reported: Optional[bool] = False    # NEW
-
+    
     model_config = {
         "from_attributes": True
-    }
-
-class reportResponse(BaseModel):  # NEW
-    message: str
-    report_count: int
-    post_removed: bool
-
-    model_config = {
-        "from_attributes": True
-    }
-
-class subscribeResponse(BaseModel):  # NEW
-    message: str
-    is_subscribed: bool
-
-    model_config = {
-        "from_attributes": True
-    }
+    }    

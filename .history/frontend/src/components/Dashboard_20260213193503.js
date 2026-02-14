@@ -99,7 +99,7 @@ const styles = {
             backgroundColor: '#f3f2ef',
         },
     },
-    // NEW STYLES
+    // ↓↓↓ NEW STYLES ↓↓↓
     subscribeBtn: {
         backgroundColor: '#0a66c2',
         color: '#fff',
@@ -148,74 +148,12 @@ const styles = {
         color: '#888',
         marginLeft: '4px',
     },
-    // CONFIRMATION POPUP STYLES
-    modalOverlay: {
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        display: 'flex',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 1000,
-    },
-    modalContent: {
-        backgroundColor: '#fff',
-        borderRadius: '12px',
-        padding: '24px',
-        maxWidth: '400px',
-        width: '90%',
-        boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-    },
-    modalHeader: {
-        fontSize: '20px',
-        fontWeight: 'bold',
-        marginBottom: '12px',
-        color: '#333',
-    },
-    modalBody: {
-        fontSize: '15px',
-        color: '#666',
-        marginBottom: '24px',
-        lineHeight: '1.5',
-    },
-    modalActions: {
-        display: 'flex',
-        gap: '12px',
-        justifyContent: 'flex-end',
-    },
-    cancelBtn: {
-        backgroundColor: '#f3f2ef',
-        color: '#333',
-        border: 'none',
-        padding: '10px 20px',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '14px',
-        fontWeight: '600',
-        transition: 'background-color 0.2s',
-    },
-    confirmBtn: {
-        backgroundColor: '#cc0000',
-        color: '#fff',
-        border: 'none',
-        padding: '10px 20px',
-        borderRadius: '8px',
-        cursor: 'pointer',
-        fontSize: '14px',
-        fontWeight: '600',
-        transition: 'background-color 0.2s',
-    },
 };
 
 const Dashboard = () => {
     const [profile, setProfile] = useState(null);
     const [posts, setPosts] = useState([]);
     const [newPost, setNewPost] = useState({ content: '', mediaFile: null });
-    const [showReportModal, setShowReportModal] = useState(false);
-    const [postToReport, setPostToReport] = useState(null);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -268,50 +206,29 @@ const Dashboard = () => {
         navigate('/login');
     };
 
-    // Show confirmation popup
-    const handleReportClick = (postId) => {
-        setPostToReport(postId);
-        setShowReportModal(true);
-    };
-
-    // Confirm report after user clicks "Report" in popup
-    const confirmReport = async () => {
+    // ↓↓↓ NEW HANDLERS ↓↓↓
+    const handleReport = async (postId) => {
         try {
-            const response = await authService.reportPost(postToReport);
+            const response = await authService.reportPost(postId);
             const { report_count, post_removed } = response.data;
-            
             if (post_removed) {
-                // Remove post instantly from UI when it hits 3 reports
-                setPosts(prev => prev.filter(p => p.id !== postToReport));
+                setPosts(prev => prev.filter(p => p.id !== postId));
             } else {
-                // Update count and lock the button for this user
                 setPosts(prev => prev.map(p =>
-                    p.id === postToReport
+                    p.id === postId
                         ? { ...p, report_count, is_reported: true }
                         : p
                 ));
             }
-            
-            setShowReportModal(false);
-            setPostToReport(null);
         } catch (error) {
             if (error.response?.data?.detail) {
                 alert(error.response.data.detail);
             } else {
                 console.error('Error reporting post:', error);
             }
-            setShowReportModal(false);
-            setPostToReport(null);
         }
     };
 
-    // Cancel report
-    const cancelReport = () => {
-        setShowReportModal(false);
-        setPostToReport(null);
-    };
-
-    // Subscribe toggle handler
     const handleSubscribe = async (postId) => {
         try {
             const response = await authService.subscribePost(postId);
@@ -337,10 +254,10 @@ const Dashboard = () => {
                 <div style={styles.profileCard}>
                     <div style={styles.avatar}>
                         {profile?.profile_picture && (
-                            <img
-                                src={getImageUrl(profile.profile_picture)}
-                                alt="Profile"
-                                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '60px' }}
+                            <img 
+                                src={getImageUrl(profile.profile_picture)} 
+                                alt="Profile" 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
                             />
                         )}
                     </div>
@@ -351,8 +268,8 @@ const Dashboard = () => {
                     </button>
                 </div>
                 <div style={styles.nav}>
-                    <button
-                        style={{ ...styles.navItem, border: 'none', backgroundColor: 'transparent', width: '100%', textAlign: 'left' }}
+                    <button 
+                        style={{...styles.navItem, border: 'none', backgroundColor: 'transparent', width: '100%', textAlign: 'left'}} 
                         onClick={handleLogout}
                         onKeyDown={(e) => e.key === 'Enter' && handleLogout()}
                     >
@@ -389,81 +306,7 @@ const Dashboard = () => {
                         <div style={styles.postHeader}>
                             <div style={styles.smallAvatar}>
                                 {post.profile_picture && (
-                                    <img
-                                        src={getImageUrl(post.profile_picture)}
-                                        alt=""
-                                        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '20px' }}
-                                    />
-                                )}
-                            </div>
-                            <div style={{ flex: 1 }}>
-                                <div style={styles.userName}>{post.username}</div>
-                            </div>
-                            {/* Subscribe & Report buttons in post header top-right */}
-                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                <button
-                                    style={post.is_subscribed ? styles.subscribedBtn : styles.subscribeBtn}
-                                    onClick={() => handleSubscribe(post.id)}
-                                    title={post.is_subscribed ? 'Unsubscribe' : 'Subscribe'}
-                                >
-                                    {post.is_subscribed ? '✓ Subscribed' : '+ Subscribe'}
-                                </button>
-                                <button
-                                    style={post.is_reported ? styles.reportedBtn : styles.reportBtn}
-                                    onClick={() => !post.is_reported && handleReportClick(post.id)}
-                                    disabled={post.is_reported}
-                                    title={post.is_reported ? 'Already reported' : 'Report post'}
-                                >
-                                    🚩 Report
-                                    {post.report_count > 0 && (
-                                        <span style={styles.reportCount}>({post.report_count}/3)</span>
-                                    )}
-                                </button>
-                            </div>
-                        </div>
-                        <div>{post.content}</div>
-                        {post.media_url && (
-                            <img
-                                src={getImageUrl(post.media_url)}
-                                alt=""
-                                style={{ maxWidth: '100%', marginTop: '10px', borderRadius: '8px' }}
-                            />
-                        )}
-                    </div>
-                ))}
-            </div>
-
-            {/* Report Confirmation Modal */}
-            {showReportModal && (
-                <div style={styles.modalOverlay} onClick={cancelReport}>
-                    <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-                        <div style={styles.modalHeader}>Report Post?</div>
-                        <div style={styles.modalBody}>
-                            Are you sure you want to report this post? This action will help us review and remove inappropriate content. If this post receives 3 reports, it will be automatically removed.
-                        </div>
-                        <div style={styles.modalActions}>
-                            <button
-                                style={styles.cancelBtn}
-                                onClick={cancelReport}
-                                onMouseEnter={(e) => e.target.style.backgroundColor = '#e0e0e0'}
-                                onMouseLeave={(e) => e.target.style.backgroundColor = '#f3f2ef'}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                style={styles.confirmBtn}
-                                onClick={confirmReport}
-                                onMouseEnter={(e) => e.target.style.backgroundColor = '#b30000'}
-                                onMouseLeave={(e) => e.target.style.backgroundColor = '#cc0000'}
-                            >
-                                Report
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-export default Dashboard;
+                                    <img 
+                                        src={getImageUrl(post.profile_picture)} 
+                                        alt="" 
+                                        style={{ width
