@@ -46,7 +46,7 @@ class posts(Base):
     user = relationship("registeruser", back_populates="posts")
     reports = relationship("post_reports", back_populates="post", cascade="all, delete-orphan")  # NEW
 
-class post_reports(Base):  # NEW TABLE
+class post_reports(Base):  
     __tablename__ = "post_reports"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -58,7 +58,7 @@ class post_reports(Base):  # NEW TABLE
     post = relationship("posts", back_populates="reports")
     reporter = relationship("registeruser")
 
-class subscriptions(Base):  # NEW TABLE
+class subscriptions(Base):  
     __tablename__ = "subscriptions"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -69,3 +69,4 @@ class subscriptions(Base):  # NEW TABLE
 
     subscriber = relationship("registeruser", foreign_keys=[subscriber_user_id])
     subscribed_to = relationship("registeruser", foreign_keys=[subscribed_to_user_id])
+    

@@ -136,10 +136,14 @@ def resetpassword(reset: resetpassword, db: Session = Depends(get_db)):
 @router.get("/loadprofile", response_model=userprofileResponse)
 def profile(showprofile: userprofile = Depends(get_current_user), db: Session = Depends(get_db)):
     user = db.query(registeruser).filter(registeruser.id == showprofile.user_id).first()
+    subscriber_count = db.query(subscriptions).filter(
+        subscriptions.subscribed_to_user_id == showprofile.user_id
+    ).count()
     return {
         "username": user.username,
         "profile_picture": showprofile.profile_pic,
-        "about": showprofile.about
+        "about": showprofile.about,
+        "subscriber_count": subscriber_count
     }
 
 
@@ -170,11 +174,15 @@ async def update_profile(
         db.refresh(current_user)
 
         user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
+        subscriber_count = db.query(subscriptions).filter(
+            subscriptions.subscribed_to_user_id == current_user.user_id
+        ).count()
 
         return {
             "username": user.username,
             "profile_picture": current_user.profile_pic,
-            "about": current_user.about
+            "about": current_user.about,
+            "subscriber_count": subscriber_count
         }
     except Exception as e:
         db.rollback()
@@ -239,6 +247,10 @@ async def create_post(
         db.commit()
         db.refresh(new_post)
 
+        subscriber_count = db.query(subscriptions).filter(
+            subscriptions.subscribed_to_user_id == user.id
+        ).count()
+
         return {
             "id": new_post.id,
             "username": user.username,
@@ -249,6 +261,7 @@ async def create_post(
             "report_count": 0,       # NEW
             "is_reported": False,    # NEW
             "is_subscribed": False,  # NEW
+            "subscriber_count": subscriber_count,  # NEW
         }
     except Exception as e:
         db.rollback()
@@ -280,6 +293,11 @@ async def get_posts(
                 subscriptions.subscribed_to_user_id == post.user_id
             ).first() is not None
 
+            # Count subscribers for this post author
+            subscriber_count = db.query(subscriptions).filter(
+                subscriptions.subscribed_to_user_id == post.user_id
+            ).count()
+            
             posts_data.append({
                 "id": post.id,
                 "username": user.username,
@@ -290,6 +308,7 @@ async def get_posts(
                 "report_count": post.report_count,   # NEW
                 "is_reported": already_reported,      # NEW
                 "is_subscribed": already_subscribed,  # NEW
+                "subscriber_count": subscriber_count,  # NEW
             })
 
         return posts_data

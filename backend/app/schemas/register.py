@@ -71,6 +71,7 @@ class userprofileResponse(BaseModel):
     about: Optional[str] = None
     profile_picture: Optional[str] = None
     message: Optional[str] = None
+    subscriber_count: Optional[int] = 0
 
     model_config = {
         "from_attributes": True
@@ -86,6 +87,7 @@ class postsResponse(BaseModel):
     report_count: Optional[int] = 0       # NEW
     is_subscribed: Optional[bool] = False  # NEW
     is_reported: Optional[bool] = False    # NEW
+    subscriber_count: Optional[int] = 0    # NEW
 
     model_config = {
         "from_attributes": True

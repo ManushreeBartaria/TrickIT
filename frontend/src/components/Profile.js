@@ -74,6 +74,12 @@ const styles = {
         fontSize: '14px',
         marginTop: '5px',
     },
+    subscriberCount: {
+        fontSize: '14px',
+        color: '#666',
+        marginBottom: '15px',
+        fontWeight: '500',
+    },
 };
 
 const Profile = () => {
@@ -81,6 +87,7 @@ const Profile = () => {
         username: '',
         about: '',
         profile_picture: null,
+        subscriber_count: 0,
     });
     const [error, setError] = useState('');
     const [imagePreview, setImagePreview] = useState(null);
@@ -88,6 +95,9 @@ const Profile = () => {
 
     useEffect(() => {
         loadProfile();
+        // Set up auto-refresh every 5 seconds to detect new subscribers
+        const interval = setInterval(loadProfile, 5000);
+        return () => clearInterval(interval);
     }, []);
     
     // Add API_BASE_URL import at the top
@@ -164,6 +174,10 @@ const Profile = () => {
                                 style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                             />
                         )}
+                    </div>
+
+                    <div style={styles.subscriberCount}>
+                        Subscribers: {profile.subscriber_count || 0}
                     </div>
 
                     <div>

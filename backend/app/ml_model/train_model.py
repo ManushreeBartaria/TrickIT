@@ -10,9 +10,9 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 
 
-dataset = os.path.join(os.path.dirname(__file__), 'dataset.csv')
+dataset = os.path.join(os.path.dirname(__file__), 'dataset1.csv')
 data = pd.read_csv(dataset, encoding='latin1', usecols=[0,1,2,3], header=0)
-
+print("Dataset loaded successfully. Shape:", data.shape)
 data['label'] = (
     data['label']
     .astype(str)

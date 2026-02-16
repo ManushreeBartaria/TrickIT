@@ -221,6 +221,12 @@ const Dashboard = () => {
     useEffect(() => {
         loadProfile();
         loadPosts();
+        // Set up auto-refresh every 5 seconds to detect new subscribers
+        const interval = setInterval(() => {
+            loadProfile();
+            loadPosts();
+        }, 5000);
+        return () => clearInterval(interval);
     }, []);
 
     const loadPosts = async () => {
@@ -398,6 +404,9 @@ const Dashboard = () => {
                             </div>
                             <div style={{ flex: 1 }}>
                                 <div style={styles.userName}>{post.username}</div>
+                                <div style={{ fontSize: '12px', color: '#666' }}>
+                                    {post.subscriber_count || 0} Subscribers
+                                </div>
                             </div>
                             {/* Subscribe & Report buttons in post header top-right */}
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
