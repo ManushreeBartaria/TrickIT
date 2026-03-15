@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 import os
 from app.database.connections import Base, engine
 from app.api.routes import registerroutes
-from app.model.registeruser import registeruser,forgotpasswordOTP,userprofile,posts,post_reports,under_review_posts,subscriptions
+from app.model.registeruser import registeruser,forgotpasswordOTP,userprofile,posts,post_reports,under_review_posts,subscriptions,approved_posts,rejected_posts
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()

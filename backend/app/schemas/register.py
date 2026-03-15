@@ -1,7 +1,7 @@
 import profile
 from pydantic import BaseModel, EmailStr
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 
 class RegisterUser(BaseModel):
     fullname: str
@@ -111,7 +111,7 @@ class subscribeResponse(BaseModel):
 
 
 # ------------------------------------------------
-# NEW SCHEMAS FOR UNDER REVIEW POSTS (LLM MODERATION)
+# UPDATED SCHEMAS FOR UNDER REVIEW POSTS
 # ------------------------------------------------
 
 class UnderReviewPost(BaseModel):
@@ -120,6 +120,7 @@ class UnderReviewPost(BaseModel):
     media_url: Optional[str] = None
     media_type: Optional[str] = None
     confidence: str
+    status: Optional[str] = "pending"
 
     model_config = {
         "from_attributes": True
@@ -133,6 +134,37 @@ class UnderReviewResponse(BaseModel):
     media_url: Optional[str] = None
     media_type: Optional[str] = None
     confidence: str
+    status: str
+    created_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# ------------------------------------------------
+# NEW SCHEMAS FOR APPROVED POSTS
+# ------------------------------------------------
+
+class ApprovedPostResponse(BaseModel):
+    id: int
+    post_id: int
+    approved_at: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# ------------------------------------------------
+# NEW SCHEMAS FOR REJECTED POSTS
+# ------------------------------------------------
+
+class RejectedPostResponse(BaseModel):
+    id: int
+    post_id: int
+    rejected_at: datetime
+    reason: Optional[str] = None
 
     model_config = {
         "from_attributes": True

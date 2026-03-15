@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, UniqueConstraint, DateTime
 from app.database.connections import Base
 from sqlalchemy.orm import relationship
+from datetime import datetime
 
 class registeruser(Base):
     __tablename__ = "register_user"
@@ -41,12 +42,12 @@ class posts(Base):
     content = Column(Text, nullable=True)
     media_url = Column(String(255), nullable=True)
     media_type = Column(String(50), nullable=True)
-    report_count = Column(Integer, default=0, nullable=False)  # NEW
+    report_count = Column(Integer, default=0, nullable=False)
 
     user = relationship("registeruser", back_populates="posts")
-    reports = relationship("post_reports", back_populates="post", cascade="all, delete-orphan")  # NEW
+    reports = relationship("post_reports", back_populates="post", cascade="all, delete-orphan")
 
-class post_reports(Base):  
+class post_reports(Base):
     __tablename__ = "post_reports"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -58,7 +59,7 @@ class post_reports(Base):
     post = relationship("posts", back_populates="reports")
     reporter = relationship("registeruser")
 
-class subscriptions(Base):  
+class subscriptions(Base):
     __tablename__ = "subscriptions"
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
@@ -69,9 +70,15 @@ class subscriptions(Base):
 
     subscriber = relationship("registeruser", foreign_keys=[subscriber_user_id])
     subscribed_to = relationship("registeruser", foreign_keys=[subscribed_to_user_id])
-    
+
+
+# ---------------------------------------------------
+# UNDER REVIEW POSTS (LLM QUEUE)
+# ---------------------------------------------------
+
 class under_review_posts(Base):
     __tablename__ = "under_review_posts"
+
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey("register_user.id"))
     content = Column(Text, nullable=True)
@@ -79,5 +86,21 @@ class under_review_posts(Base):
     media_type = Column(String(50), nullable=True)
     confidence = Column(String(20), nullable=False)
 
-    # optional link to posts table if later approved
-    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)    
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)
+    status = Column(String(20), default="pending", nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+class approved_posts(Base):
+    __tablename__ = "approved_posts"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
+    approved_at = Column(DateTime, default=datetime.utcnow)
+
+class rejected_posts(Base):
+    __tablename__ = "rejected_posts"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
+    rejected_at = Column(DateTime, default=datetime.utcnow)
+    reason = Column(Text, nullable=True)

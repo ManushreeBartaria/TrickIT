@@ -1,3 +1,5 @@
+import stat
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connections import get_db
@@ -228,17 +230,9 @@ async def create_post(
             new_post.media_url = f"/uploads/{filename}"
             new_post.media_type = media.content_type
 
-        # -------------------------------
-        # SAVE POST FOR USER EXPERIENCE
-        # -------------------------------
-
         db.add(new_post)
         db.commit()
         db.refresh(new_post)
-
-        # -------------------------------
-        # IF LOW CONFIDENCE → SEND TO LLM REVIEW
-        # -------------------------------
 
         if educational_prob < 0.65:
 
@@ -248,7 +242,8 @@ async def create_post(
                 media_url=new_post.media_url,
                 media_type=new_post.media_type,
                 confidence=str(educational_prob),
-                post_id=new_post.id
+                post_id=new_post.id,
+                status="pending"
             )
 
             db.add(review_post)
