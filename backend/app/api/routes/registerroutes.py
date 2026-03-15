@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connections import get_db
 from fastapi import File, UploadFile, Form
-from app.model.registeruser import registeruser, forgotpasswordOTP
+from app.model.registeruser import registeruser, forgotpasswordOTP,approved_posts,rejected_posts
 from app.model.registeruser import posts, userprofile, post_reports, subscriptions, under_review_posts  
-from app.schemas.register import RegisterUser, RegisterResponse, LoginResponse, LoginUser
+from app.schemas.register import RegisterUser, RegisterResponse, LoginResponse, LoginUser,ApprovedPostResponse,RejectedPostResponse
 from app.schemas.register import forgotpassword, resetpassword, forgotpasswordResponse, resetpasswordResponse, userprofileResponse
 from app.schemas.register import postsResponse, reportResponse, subscribeResponse, UnderReviewPost,UnderReviewResponse
 from typing import List
@@ -19,6 +19,7 @@ import shutil
 import uuid
 import joblib
 import sklearn
+from app.services.llm_service import llm_check
 
 router = APIRouter()
 
@@ -413,3 +414,48 @@ async def toggle_subscribe(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    
+@router.post("/llm-processing")
+async def llm_processing(db: Session = Depends(get_db)):
+
+    try:
+        pending_posts = db.query(under_review_posts).filter(
+            under_review_posts.status == "pending"
+        ).all()
+        processed_posts = []
+        for post in pending_posts:
+            content = post.content
+            result = llm_check(content)
+
+            if result == "educational":
+
+                approved_entry = approved_posts(
+                    post_id=post.post_id
+                )
+
+                db.add(approved_entry)
+                post.status = "approved"
+
+            else:
+                rejected_entry = rejected_posts(
+                    post_id=post.post_id,
+                    reason="LLM detected non educational content"
+                )
+
+                db.add(rejected_entry)
+                post.status = "rejected"
+
+            processed_posts.append(post.post_id)
+
+        db.commit()
+        return {
+            "message": "LLM processing completed",
+            "processed_posts": processed_posts
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )    
