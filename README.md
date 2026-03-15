@@ -1,4 +1,4 @@
-# TrickIT - Social Media Platform
+# TrickIT - Social Media Platform updated
 
 A modern and secure social media platform built with FastAPI backend and React frontend, featuring user authentication, profile management, and media sharing capabilities.
 
