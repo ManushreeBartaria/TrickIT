@@ -84,16 +84,15 @@ class postsResponse(BaseModel):
     about: Optional[str] = None
     content: Optional[str] = None
     media_url: Optional[str] = None
-    report_count: Optional[int] = 0       # NEW
-    is_subscribed: Optional[bool] = False  # NEW
-    is_reported: Optional[bool] = False    # NEW
-    subscriber_count: Optional[int] = 0    # NEW
+    report_count: Optional[int] = 0
+    is_subscribed: Optional[bool] = False
+    is_reported: Optional[bool] = False
 
     model_config = {
         "from_attributes": True
     }
 
-class reportResponse(BaseModel):  # NEW
+class reportResponse(BaseModel):
     message: str
     report_count: int
     post_removed: bool
@@ -102,9 +101,38 @@ class reportResponse(BaseModel):  # NEW
         "from_attributes": True
     }
 
-class subscribeResponse(BaseModel):  # NEW
+class subscribeResponse(BaseModel):
     message: str
     is_subscribed: bool
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# ------------------------------------------------
+# NEW SCHEMAS FOR UNDER REVIEW POSTS (LLM MODERATION)
+# ------------------------------------------------
+
+class UnderReviewPost(BaseModel):
+    user_id: int
+    content: Optional[str] = None
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None
+    confidence: str
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+class UnderReviewResponse(BaseModel):
+    id: int
+    user_id: int
+    content: Optional[str] = None
+    media_url: Optional[str] = None
+    media_type: Optional[str] = None
+    confidence: str
 
     model_config = {
         "from_attributes": True

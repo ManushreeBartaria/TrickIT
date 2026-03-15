@@ -47,5 +47,4 @@ dist/
 build/
 *.pkl
 uploads/
-dataset.csv
-dataset1.csv
+.history/

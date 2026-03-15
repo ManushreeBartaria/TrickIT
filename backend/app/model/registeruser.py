@@ -70,3 +70,14 @@ class subscriptions(Base):
     subscriber = relationship("registeruser", foreign_keys=[subscriber_user_id])
     subscribed_to = relationship("registeruser", foreign_keys=[subscribed_to_user_id])
     
+class under_review_posts(Base):
+    __tablename__ = "under_review_posts"
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("register_user.id"))
+    content = Column(Text, nullable=True)
+    media_url = Column(String(255), nullable=True)
+    media_type = Column(String(50), nullable=True)
+    confidence = Column(String(20), nullable=False)
+
+    # optional link to posts table if later approved
+    post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)    

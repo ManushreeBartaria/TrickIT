@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 from app.database.connections import get_db
 from fastapi import File, UploadFile, Form
 from app.model.registeruser import registeruser, forgotpasswordOTP
-from app.model.registeruser import posts, userprofile, post_reports, subscriptions  # UPDATED
+from app.model.registeruser import posts, userprofile, post_reports, subscriptions, under_review_posts  
 from app.schemas.register import RegisterUser, RegisterResponse, LoginResponse, LoginUser
 from app.schemas.register import forgotpassword, resetpassword, forgotpasswordResponse, resetpasswordResponse, userprofileResponse
-from app.schemas.register import postsResponse, reportResponse, subscribeResponse  # UPDATED
+from app.schemas.register import postsResponse, reportResponse, subscribeResponse, UnderReviewPost,UnderReviewResponse
 from typing import List
 import random as rnd
 from fastapi.security import OAuth2PasswordBearer
@@ -29,7 +29,6 @@ model_path = os.path.abspath(os.path.join(MODEL_DIR, "lr_model.pkl"))
 vector_path = os.path.abspath(os.path.join(MODEL_DIR, "vectorizer.pkl"))
 selector_path = os.path.abspath(os.path.join(MODEL_DIR, "chi_selector.pkl"))
 selector = joblib.load(selector_path)
-
 vector = joblib.load(vector_path)
 model = joblib.load(model_path)
 
@@ -188,7 +187,6 @@ async def update_profile(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
-
 @router.post("/posts", response_model=postsResponse)
 async def create_post(
     content: str = Form(...),
@@ -201,33 +199,20 @@ async def create_post(
 
         vector_matrix = vector.transform([content])
         vector_matrix = selector.transform(vector_matrix)
-
         probs = model.predict_proba(vector_matrix)
 
         classes = model.classes_.tolist()
         edu_index = classes.index('educational')
-
         educational_prob = probs[0][edu_index]
-        if educational_prob >= 0.55:
-            new_post = posts(
-                user_id=user.id,
-                content=content,
-                media_url=None,
-                media_type=None
-            )
-        elif educational_prob >= 0.40:
-            new_post = posts(
-                user_id=user.id,
-                content=content,
-                media_url=None,
-                media_type=None
-            )
-            print("Borderline educational content:", educational_prob)
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Inappropriate content (confidence={educational_prob:.2f})"
-            )
+
+        print("Educational probability:", educational_prob)
+
+        new_post = posts(
+            user_id=user.id,
+            content=content,
+            media_url=None,
+            media_type=None
+        )
 
         if media:
             os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -243,13 +228,35 @@ async def create_post(
             new_post.media_url = f"/uploads/{filename}"
             new_post.media_type = media.content_type
 
+        # -------------------------------
+        # SAVE POST FOR USER EXPERIENCE
+        # -------------------------------
+
         db.add(new_post)
         db.commit()
         db.refresh(new_post)
 
-        subscriber_count = db.query(subscriptions).filter(
-            subscriptions.subscribed_to_user_id == user.id
-        ).count()
+        # -------------------------------
+        # IF LOW CONFIDENCE → SEND TO LLM REVIEW
+        # -------------------------------
+
+        if educational_prob < 0.65:
+
+            review_post = under_review_posts(
+                user_id=user.id,
+                content=content,
+                media_url=new_post.media_url,
+                media_type=new_post.media_type,
+                confidence=str(educational_prob),
+                post_id=new_post.id
+            )
+
+            db.add(review_post)
+            db.commit()
+
+        # -------------------------------
+        # RETURN RESPONSE (MATCHES SCHEMA)
+        # -------------------------------
 
         return {
             "id": new_post.id,
@@ -258,14 +265,18 @@ async def create_post(
             "about": current_user.about or "",
             "content": new_post.content,
             "media_url": new_post.media_url,
-            "report_count": 0,       # NEW
-            "is_reported": False,    # NEW
-            "is_subscribed": False,  # NEW
-            "subscriber_count": subscriber_count,  # NEW
+            "report_count": new_post.report_count,
+            "is_reported": False,
+            "is_subscribed": False,
         }
+
+    except HTTPException:
+        raise
+
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @router.get("/posts", response_model=List[postsResponse])
@@ -280,14 +291,11 @@ async def get_posts(
         for post in all_posts:
             user = db.query(registeruser).filter(registeruser.id == post.user_id).first()
             profile = db.query(userprofile).filter(userprofile.user_id == user.id).first()
-
-            # NEW: Check if current user already reported this post
             already_reported = db.query(post_reports).filter(
                 post_reports.post_id == post.id,
                 post_reports.reporter_user_id == current_user.user_id
             ).first() is not None
 
-            # NEW: Check if current user is subscribed to the post author
             already_subscribed = db.query(subscriptions).filter(
                 subscriptions.subscriber_user_id == current_user.user_id,
                 subscriptions.subscribed_to_user_id == post.user_id
