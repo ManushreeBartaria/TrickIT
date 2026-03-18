@@ -1,4 +1,6 @@
+from asyncio import run
 import stat
+from turtle import back
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -20,6 +22,7 @@ import uuid
 import joblib
 import sklearn
 from app.services.llm_service import llm_check
+from app.services.check_pending import check_and_trigger
 
 router = APIRouter()
 
@@ -459,3 +462,16 @@ async def llm_processing(db: Session = Depends(get_db)):
             status_code=500,
             detail=str(e)
         )    
+        
+
+@router.get("/check_pending")
+async def check_pending(db: Session = Depends(get_db)):
+    try:
+        result = check_and_trigger(db)
+        return result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )      
