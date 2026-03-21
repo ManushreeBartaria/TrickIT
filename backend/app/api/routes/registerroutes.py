@@ -1,5 +1,6 @@
 import stat
-
+from app.model.registeruser import community_creators
+from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connections import get_db
@@ -459,3 +460,40 @@ async def llm_processing(db: Session = Depends(get_db)):
             status_code=500,
             detail=str(e)
         )    
+@router.post("/join-community", response_model=JoinCommunityResponse)
+async def join_community(
+    data: JoinCommunityRequest,
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        existing = db.query(community_creators).filter(
+            community_creators.creator_id == current_user.id
+        ).first()
+
+        if existing:
+            return {"message": "Already a community member", "status": "yes"}
+
+        new_creator = community_creators(
+            creator_id=current_user.id,
+            name=data.name,
+            upi_id=data.upi_id
+        )
+        db.add(new_creator)
+
+        current_user.status = "yes"
+        db.commit()
+
+        return {"message": "Successfully joined the community!", "status": "yes"}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/community-status", response_model=JoinCommunityResponse)
+async def community_status(
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return {"message": "Status fetched", "status": current_user.status or "no"}
