@@ -26,7 +26,7 @@ import sklearn
 from app.services.llm_service import llm_check
 from app.services.check_pending import check_and_trigger
 from app.services.post_processing_service import process_post
-
+import requests
 router = APIRouter()
 UPLOAD_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "uploads")
@@ -254,10 +254,21 @@ async def create_post(
             db.add(review_post)
             db.commit()
 
-        # -------------------------------
-        # RETURN RESPONSE (MATCHES SCHEMA)
-        # -------------------------------
+            try:
+                jenkins_url = "http://localhost:8080/job/trickit-pipeline/build"
 
+                response = requests.post(
+                    jenkins_url,
+                    params={"token": "reviewtrigger"},
+                    auth=("admin","11c79993fd37f53e50bac2b78c0fad885b"),
+                    timeout=10
+                )
+
+                print("Jenkins status:", response.status_code)
+
+            except Exception as e:
+                print("Jenkins trigger failed:", e)
+        
         return {
             "id": new_post.id,
             "username": user.username,
