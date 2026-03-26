@@ -169,3 +169,16 @@ class RejectedPostResponse(BaseModel):
     model_config = {
         "from_attributes": True
     }
+
+class JoinCommunityRequest(BaseModel):
+    name: str
+    upi_id: str
+
+    model_config = {"from_attributes": True}
+
+class JoinCommunityResponse(BaseModel):
+    message: str
+    status: str
+
+    model_config = {"from_attributes": True}
+
