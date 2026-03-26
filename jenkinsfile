@@ -10,7 +10,7 @@ pipeline {
         stage('Check Pending') {
             steps {
                 sh '''
-                curl http://host.minikube.internal:8000/check_pending
+                curl http://host.minikube.internal:8000/api/check_pending
                 '''
             }
         }

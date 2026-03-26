@@ -15,7 +15,7 @@ def check_and_trigger(db: Session):
         print("Triggering LLM processing...")
 
         response = requests.post(
-            "http://localhost:8000/llm-processing"
+            "http://localhost:8000/api/llm-processing"
         )
 
         return {
