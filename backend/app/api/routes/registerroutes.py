@@ -3,7 +3,7 @@ import stat
 from app.model.registeruser import community_creators
 from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
 from turtle import back
-
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connections import get_db
@@ -25,6 +25,8 @@ import joblib
 import sklearn
 from app.services.llm_service import llm_check
 from app.services.check_pending import check_and_trigger
+from app.services.post_processing_service import process_post
+
 router = APIRouter()
 UPLOAD_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "uploads")
@@ -416,52 +418,15 @@ async def toggle_subscribe(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-    
+
 @router.post("/llm-processing/{post_id}")
 async def llm_processing(post_id: int, db: Session = Depends(get_db)):
 
     try:
-        post = db.query(under_review_posts).filter(
-            under_review_posts.post_id == post_id,
-            under_review_posts.status == "pending"
-        ).first()
-
-        if not post:
-            return {
-                "message": "Post not found or already processed"
-            }
-
-        content = post.content
-        result = llm_check(content)
-
-        if result == "educational":
-
-            approved_entry = approved_posts(
-                post_id=post.post_id
-            )
-
-            db.add(approved_entry)
-            post.status = "approved"
-
-        else:
-            rejected_entry = rejected_posts(
-                post_id=post.post_id,
-                reason="LLM detected non educational content"
-            )
-
-            db.add(rejected_entry)
-            post.status = "rejected"
-
-        db.commit()
-
-        return {
-            "message": "Post processed successfully",
-            "post_id": post.post_id,
-            "result": result
-        }
+        result = await process_post(post_id, db)
+        return result
 
     except Exception as e:
-        db.rollback()
         raise HTTPException(
             status_code=500,
             detail=str(e)
@@ -510,11 +475,11 @@ async def community_status(
 @router.get("/check_pending")
 async def check_pending(db: Session = Depends(get_db)):
     try:
-        result = check_and_trigger(db)
+        result = await check_and_trigger(db)
         return result
 
     except Exception as e:
         raise HTTPException(
             status_code=500,
             detail=str(e)
-        )      
+        )
