@@ -19,9 +19,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+BASE_DIR = os.path.dirname(__file__)  # app
+uploads_dir = os.path.join(BASE_DIR, "api", "uploads")
 
-uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(uploads_dir, exist_ok=True)
+
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 Base.metadata.create_all(bind=engine)
 
