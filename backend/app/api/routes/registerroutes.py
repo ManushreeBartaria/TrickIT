@@ -1,6 +1,9 @@
+from asyncio import run
 import stat
 from app.model.registeruser import community_creators
 from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
+from turtle import back
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connections import get_db
@@ -21,11 +24,11 @@ import uuid
 import joblib
 import sklearn
 from app.services.llm_service import llm_check
-
+from app.services.check_pending import check_and_trigger
 router = APIRouter()
-
-UPLOAD_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads"))
-
+UPLOAD_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "uploads")
+)
 BASE_DIR = os.path.dirname(__file__)
 MODEL_DIR = os.path.join(BASE_DIR, "..", "..", "ml_model")
 print(MODEL_DIR)
@@ -39,7 +42,6 @@ model = joblib.load(model_path)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 SECRET_KEY = "hackathon-secret-key"
 ALGORITHM = "HS256"
-
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -167,11 +169,10 @@ async def update_profile(
             filename = f"{uuid.uuid4()}{file_extension}"
             file_path = os.path.join(UPLOAD_DIR, filename)
 
-            contents = await profile_pic.read()
             with open(file_path, "wb") as f:
-                f.write(contents)
+                 f.write(await profile_pic.read())
 
-            current_user.profile_pic = f"/uploads/{filename}"
+            current_user.profile_pic = f"http://127.0.0.1:8000/uploads/{filename}"
 
         db.commit()
         db.refresh(current_user)
@@ -497,3 +498,16 @@ async def community_status(
     db: Session = Depends(get_db)
 ):
     return {"message": "Status fetched", "status": current_user.status or "no"}
+        
+
+@router.get("/check_pending")
+async def check_pending(db: Session = Depends(get_db)):
+    try:
+        result = check_and_trigger(db)
+        return result
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )      
