@@ -31,6 +31,7 @@ class userprofile(Base):
     user_id = Column(Integer, ForeignKey("register_user.id"))
     about = Column(Text, nullable=True)
     profile_pic = Column(String(255), nullable=True)
+    status = Column(String(10), default="no", nullable=False)  # NEW: community status
 
     user = relationship("registeruser", back_populates="user_profile")
 
@@ -85,7 +86,6 @@ class under_review_posts(Base):
     media_url = Column(String(255), nullable=True)
     media_type = Column(String(50), nullable=True)
     confidence = Column(String(20), nullable=False)
-
     post_id = Column(Integer, ForeignKey("posts.id"), nullable=True)
     status = Column(String(20), default="pending", nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -104,3 +104,17 @@ class rejected_posts(Base):
     post_id = Column(Integer, ForeignKey("posts.id"), nullable=False)
     rejected_at = Column(DateTime, default=datetime.utcnow)
     reason = Column(Text, nullable=True)
+
+
+# ---------------------------------------------------
+# COMMUNITY CREATORS (MONETISATION) - NEW TABLE
+# ---------------------------------------------------
+
+class community_creators(Base):
+    __tablename__ = "community_creators"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    creator_id = Column(Integer, ForeignKey("profile.id"), nullable=False, unique=True)
+    name = Column(String(100), nullable=False)
+    upi_id = Column(String(100), nullable=False)
+    joined_at = Column(DateTime, default=datetime.utcnow)

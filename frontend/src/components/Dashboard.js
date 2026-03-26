@@ -54,6 +54,30 @@ const styles = {
         marginTop: '10px',
         width: '100%',
     },
+    joinBtn: {
+        backgroundColor: '#fff',
+        color: '#0a66c2',
+        border: '2px solid #0a66c2',
+        padding: '8px 16px',
+        borderRadius: '16px',
+        cursor: 'pointer',
+        marginTop: '8px',
+        width: '100%',
+        fontWeight: '600',
+        fontSize: '14px',
+    },
+    alreadyJoinedBtn: {
+        backgroundColor: '#e8f4e8',
+        color: '#2e7d32',
+        border: '2px solid #2e7d32',
+        padding: '8px 16px',
+        borderRadius: '16px',
+        cursor: 'default',
+        marginTop: '8px',
+        width: '100%',
+        fontWeight: '600',
+        fontSize: '14px',
+    },
     createPost: {
         backgroundColor: '#fff',
         borderRadius: '8px',
@@ -95,11 +119,7 @@ const styles = {
         borderRadius: '4px',
         cursor: 'pointer',
         marginBottom: '5px',
-        '&:hover': {
-            backgroundColor: '#f3f2ef',
-        },
     },
-    // NEW STYLES
     subscribeBtn: {
         backgroundColor: '#0a66c2',
         color: '#fff',
@@ -109,7 +129,6 @@ const styles = {
         cursor: 'pointer',
         fontSize: '13px',
         fontWeight: '600',
-        transition: 'background-color 0.2s',
     },
     subscribedBtn: {
         backgroundColor: '#fff',
@@ -120,7 +139,6 @@ const styles = {
         cursor: 'pointer',
         fontSize: '13px',
         fontWeight: '600',
-        transition: 'background-color 0.2s',
     },
     reportBtn: {
         backgroundColor: 'transparent',
@@ -131,7 +149,6 @@ const styles = {
         cursor: 'pointer',
         fontSize: '13px',
         fontWeight: '600',
-        transition: 'all 0.2s',
     },
     reportedBtn: {
         backgroundColor: '#cc0000',
@@ -148,14 +165,10 @@ const styles = {
         color: '#888',
         marginLeft: '4px',
     },
-    // CONFIRMATION POPUP STYLES
     modalOverlay: {
         position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.5)',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
@@ -195,7 +208,6 @@ const styles = {
         cursor: 'pointer',
         fontSize: '14px',
         fontWeight: '600',
-        transition: 'background-color 0.2s',
     },
     confirmBtn: {
         backgroundColor: '#cc0000',
@@ -206,7 +218,32 @@ const styles = {
         cursor: 'pointer',
         fontSize: '14px',
         fontWeight: '600',
-        transition: 'background-color 0.2s',
+    },
+    submitBtn: {
+        backgroundColor: '#0a66c2',
+        color: '#fff',
+        border: 'none',
+        padding: '10px 20px',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        fontSize: '14px',
+        fontWeight: '600',
+    },
+    formInput: {
+        width: '100%',
+        padding: '10px 12px',
+        border: '1px solid #e0e0e0',
+        borderRadius: '8px',
+        fontSize: '14px',
+        marginBottom: '12px',
+        boxSizing: 'border-box',
+    },
+    formLabel: {
+        fontSize: '13px',
+        fontWeight: '600',
+        color: '#444',
+        marginBottom: '4px',
+        display: 'block',
     },
 };
 
@@ -216,18 +253,35 @@ const Dashboard = () => {
     const [newPost, setNewPost] = useState({ content: '', mediaFile: null });
     const [showReportModal, setShowReportModal] = useState(false);
     const [postToReport, setPostToReport] = useState(null);
+
+    // Community state
+    const [showCommunityModal, setShowCommunityModal] = useState(false);
+    const [communityStatus, setCommunityStatus] = useState('no');
+    const [communityForm, setCommunityForm] = useState({ name: '', upi_id: '' });
+    const [communityLoading, setCommunityLoading] = useState(false);
+    const [communityError, setCommunityError] = useState('');
+
     const navigate = useNavigate();
 
     useEffect(() => {
         loadProfile();
         loadPosts();
-        // Set up auto-refresh every 5 seconds to detect new subscribers
+        loadCommunityStatus();
         const interval = setInterval(() => {
             loadProfile();
             loadPosts();
         }, 5000);
         return () => clearInterval(interval);
     }, []);
+
+    const loadCommunityStatus = async () => {
+        try {
+            const response = await authService.communityStatus();
+            setCommunityStatus(response.data.status);
+        } catch (error) {
+            console.error('Error loading community status:', error);
+        }
+    };
 
     const loadPosts = async () => {
         try {
@@ -244,9 +298,7 @@ const Dashboard = () => {
             setProfile(response.data);
         } catch (error) {
             console.error('Error loading profile:', error);
-            if (error.response?.status === 401) {
-                navigate('/login');
-            }
+            if (error.response?.status === 401) navigate('/login');
         }
     };
 
@@ -255,17 +307,13 @@ const Dashboard = () => {
         try {
             const formData = new FormData();
             formData.append('content', newPost.content);
-            if (newPost.mediaFile) {
-                formData.append('media', newPost.mediaFile);
-            }
+            if (newPost.mediaFile) formData.append('media', newPost.mediaFile);
             await authService.uploadPost(formData);
             setNewPost({ content: '', mediaFile: null });
             loadPosts();
         } catch (error) {
             console.error('Error creating post:', error);
-            if (error.response?.data?.detail) {
-                alert(error.response.data.detail);
-            }
+            if (error.response?.data?.detail) alert(error.response.data.detail);
         }
     };
 
@@ -274,65 +322,74 @@ const Dashboard = () => {
         navigate('/login');
     };
 
-    // Show confirmation popup
     const handleReportClick = (postId) => {
         setPostToReport(postId);
         setShowReportModal(true);
     };
 
-    // Confirm report after user clicks "Report" in popup
     const confirmReport = async () => {
         try {
             const response = await authService.reportPost(postToReport);
             const { report_count, post_removed } = response.data;
-            
             if (post_removed) {
-                // Remove post instantly from UI when it hits 3 reports
                 setPosts(prev => prev.filter(p => p.id !== postToReport));
             } else {
-                // Update count and lock the button for this user
                 setPosts(prev => prev.map(p =>
-                    p.id === postToReport
-                        ? { ...p, report_count, is_reported: true }
-                        : p
+                    p.id === postToReport ? { ...p, report_count, is_reported: true } : p
                 ));
             }
-            
             setShowReportModal(false);
             setPostToReport(null);
         } catch (error) {
-            if (error.response?.data?.detail) {
-                alert(error.response.data.detail);
-            } else {
-                console.error('Error reporting post:', error);
-            }
+            if (error.response?.data?.detail) alert(error.response.data.detail);
             setShowReportModal(false);
             setPostToReport(null);
         }
     };
 
-    // Cancel report
     const cancelReport = () => {
         setShowReportModal(false);
         setPostToReport(null);
     };
 
-    // Subscribe toggle handler
     const handleSubscribe = async (postId) => {
         try {
             const response = await authService.subscribePost(postId);
             const { is_subscribed } = response.data;
             setPosts(prev => prev.map(p =>
-                p.id === postId
-                    ? { ...p, is_subscribed }
-                    : p
+                p.id === postId ? { ...p, is_subscribed } : p
             ));
         } catch (error) {
-            if (error.response?.data?.detail) {
-                alert(error.response.data.detail);
-            } else {
-                console.error('Error subscribing:', error);
-            }
+            if (error.response?.data?.detail) alert(error.response.data.detail);
+        }
+    };
+
+    const handleJoinCommunityClick = () => {
+        if (communityStatus === 'yes') return;
+        setCommunityForm({ name: '', upi_id: '' });
+        setCommunityError('');
+        setShowCommunityModal(true);
+    };
+
+    const handleCommunitySubmit = async (e) => {
+        e.preventDefault();
+        if (!communityForm.name.trim() || !communityForm.upi_id.trim()) {
+            setCommunityError('Please fill in all fields.');
+            return;
+        }
+        setCommunityLoading(true);
+        setCommunityError('');
+        try {
+            const response = await authService.joinCommunity({
+                name: communityForm.name.trim(),
+                upi_id: communityForm.upi_id.trim(),
+            });
+            setCommunityStatus(response.data.status);
+            setShowCommunityModal(false);
+        } catch (error) {
+            setCommunityError(error.response?.data?.detail || 'Something went wrong. Please try again.');
+        } finally {
+            setCommunityLoading(false);
         }
     };
 
@@ -352,15 +409,25 @@ const Dashboard = () => {
                     </div>
                     <div style={styles.userName}>{profile?.username}</div>
                     <div style={styles.about}>{profile?.about || 'No bio added yet'}</div>
+
+                    {/* Edit Profile Button */}
                     <button style={styles.button} onClick={() => navigate('/profile')}>
                         Edit Profile
                     </button>
+
+                    {/* Join Community Button */}
+                    <button
+                        style={communityStatus === 'yes' ? styles.alreadyJoinedBtn : styles.joinBtn}
+                        onClick={handleJoinCommunityClick}
+                    >
+                        {communityStatus === 'yes' ? '✓ Already Joined' : '🌐 Join Community'}
+                    </button>
                 </div>
+
                 <div style={styles.nav}>
                     <button
                         style={{ ...styles.navItem, border: 'none', backgroundColor: 'transparent', width: '100%', textAlign: 'left' }}
                         onClick={handleLogout}
-                        onKeyDown={(e) => e.key === 'Enter' && handleLogout()}
                     >
                         Logout
                     </button>
@@ -383,9 +450,7 @@ const Dashboard = () => {
                             onChange={(e) => setNewPost({ ...newPost, mediaFile: e.target.files[0] })}
                             accept="image/*,video/*"
                         />
-                        <button type="submit" style={styles.button}>
-                            Post
-                        </button>
+                        <button type="submit" style={styles.button}>Post</button>
                     </form>
                 </div>
 
@@ -408,12 +473,10 @@ const Dashboard = () => {
                                     {post.subscriber_count || 0} Subscribers
                                 </div>
                             </div>
-                            {/* Subscribe & Report buttons in post header top-right */}
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                                 <button
                                     style={post.is_subscribed ? styles.subscribedBtn : styles.subscribeBtn}
                                     onClick={() => handleSubscribe(post.id)}
-                                    title={post.is_subscribed ? 'Unsubscribe' : 'Subscribe'}
                                 >
                                     {post.is_subscribed ? '✓ Subscribed' : '+ Subscribe'}
                                 </button>
@@ -421,7 +484,6 @@ const Dashboard = () => {
                                     style={post.is_reported ? styles.reportedBtn : styles.reportBtn}
                                     onClick={() => !post.is_reported && handleReportClick(post.id)}
                                     disabled={post.is_reported}
-                                    title={post.is_reported ? 'Already reported' : 'Report post'}
                                 >
                                     🚩 Report
                                     {post.report_count > 0 && (
@@ -442,32 +504,69 @@ const Dashboard = () => {
                 ))}
             </div>
 
-            {/* Report Confirmation Modal */}
+            {/* Report Modal */}
             {showReportModal && (
                 <div style={styles.modalOverlay} onClick={cancelReport}>
                     <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
                         <div style={styles.modalHeader}>Report Post?</div>
                         <div style={styles.modalBody}>
-                            Are you sure you want to report this post? This action will help us review and remove inappropriate content. If this post receives 3 reports, it will be automatically removed.
+                            Are you sure you want to report this post? If this post receives 3 reports, it will be automatically removed.
                         </div>
                         <div style={styles.modalActions}>
-                            <button
-                                style={styles.cancelBtn}
-                                onClick={cancelReport}
-                                onMouseEnter={(e) => e.target.style.backgroundColor = '#e0e0e0'}
-                                onMouseLeave={(e) => e.target.style.backgroundColor = '#f3f2ef'}
-                            >
-                                Cancel
-                            </button>
-                            <button
-                                style={styles.confirmBtn}
-                                onClick={confirmReport}
-                                onMouseEnter={(e) => e.target.style.backgroundColor = '#b30000'}
-                                onMouseLeave={(e) => e.target.style.backgroundColor = '#cc0000'}
-                            >
-                                Report
-                            </button>
+                            <button style={styles.cancelBtn} onClick={cancelReport}>Cancel</button>
+                            <button style={styles.confirmBtn} onClick={confirmReport}>Report</button>
                         </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Join Community Modal */}
+            {showCommunityModal && (
+                <div style={styles.modalOverlay} onClick={() => setShowCommunityModal(false)}>
+                    <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+                        <div style={styles.modalHeader}>🌐 Join Community</div>
+                        <div style={styles.modalBody}>
+                            Fill in your details to become a community creator and enable monetisation.
+                        </div>
+                        <form onSubmit={handleCommunitySubmit}>
+                            <label style={styles.formLabel}>Full Name</label>
+                            <input
+                                style={styles.formInput}
+                                type="text"
+                                placeholder="Enter your full name"
+                                value={communityForm.name}
+                                onChange={(e) => setCommunityForm({ ...communityForm, name: e.target.value })}
+                            />
+                            <label style={styles.formLabel}>UPI ID</label>
+                            <input
+                                style={styles.formInput}
+                                type="text"
+                                placeholder="e.g. yourname@upi"
+                                value={communityForm.upi_id}
+                                onChange={(e) => setCommunityForm({ ...communityForm, upi_id: e.target.value })}
+                            />
+                            {communityError && (
+                                <div style={{ color: '#cc0000', fontSize: '13px', marginBottom: '10px' }}>
+                                    {communityError}
+                                </div>
+                            )}
+                            <div style={styles.modalActions}>
+                                <button
+                                    type="button"
+                                    style={styles.cancelBtn}
+                                    onClick={() => setShowCommunityModal(false)}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    style={{ ...styles.submitBtn, opacity: communityLoading ? 0.7 : 1 }}
+                                    disabled={communityLoading}
+                                >
+                                    {communityLoading ? 'Submitting...' : 'Submit'}
+                                </button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             )}

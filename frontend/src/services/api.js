@@ -22,21 +22,19 @@ export const authService = {
     loadProfile: () => api.get('/api/loadprofile'),
     updateProfile: (formData) => {
         return api.put('/api/update-profile', formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-            },
+            headers: { 'Content-Type': 'multipart/form-data' },
         });
     },
     uploadPost: (postData) => {
         return api.post('/api/posts', postData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-            },
+            headers: { 'Content-Type': 'multipart/form-data' },
         });
     },
     getPosts: () => api.get('/api/posts'),
-    reportPost: (postId) => api.post(`/api/posts/${postId}/report`),      // NEW
-    subscribePost: (postId) => api.post(`/api/posts/${postId}/subscribe`), // NEW
+    reportPost: (postId) => api.post(`/api/posts/${postId}/report`),
+    subscribePost: (postId) => api.post(`/api/posts/${postId}/subscribe`),
+    joinCommunity: (data) => api.post('/api/join-community', data),   // NEW
+    communityStatus: () => api.get('/api/community-status'),          // NEW
 };
 
 api.interceptors.request.use(
@@ -47,9 +45,7 @@ api.interceptors.request.use(
         }
         return config;
     },
-    (error) => {
-        return Promise.reject(error);
-    }
+    (error) => Promise.reject(error)
 );
 
 export default api;
