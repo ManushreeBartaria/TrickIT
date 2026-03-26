@@ -417,42 +417,47 @@ async def toggle_subscribe(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     
-@router.post("/llm-processing")
-async def llm_processing(db: Session = Depends(get_db)):
+@router.post("/llm-processing/{post_id}")
+async def llm_processing(post_id: int, db: Session = Depends(get_db)):
 
     try:
-        pending_posts = db.query(under_review_posts).filter(
+        post = db.query(under_review_posts).filter(
+            under_review_posts.post_id == post_id,
             under_review_posts.status == "pending"
-        ).all()
-        processed_posts = []
-        for post in pending_posts:
-            content = post.content
-            result = llm_check(content)
+        ).first()
 
-            if result == "educational":
+        if not post:
+            return {
+                "message": "Post not found or already processed"
+            }
 
-                approved_entry = approved_posts(
-                    post_id=post.post_id
-                )
+        content = post.content
+        result = llm_check(content)
 
-                db.add(approved_entry)
-                post.status = "approved"
+        if result == "educational":
 
-            else:
-                rejected_entry = rejected_posts(
-                    post_id=post.post_id,
-                    reason="LLM detected non educational content"
-                )
+            approved_entry = approved_posts(
+                post_id=post.post_id
+            )
 
-                db.add(rejected_entry)
-                post.status = "rejected"
+            db.add(approved_entry)
+            post.status = "approved"
 
-            processed_posts.append(post.post_id)
+        else:
+            rejected_entry = rejected_posts(
+                post_id=post.post_id,
+                reason="LLM detected non educational content"
+            )
+
+            db.add(rejected_entry)
+            post.status = "rejected"
 
         db.commit()
+
         return {
-            "message": "LLM processing completed",
-            "processed_posts": processed_posts
+            "message": "Post processed successfully",
+            "post_id": post.post_id,
+            "result": result
         }
 
     except Exception as e:
@@ -460,7 +465,9 @@ async def llm_processing(db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=500,
             detail=str(e)
-        )    
+        )
+        
+        
 @router.post("/join-community", response_model=JoinCommunityResponse)
 async def join_community(
     data: JoinCommunityRequest,
