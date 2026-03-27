@@ -239,7 +239,7 @@ async def create_post(
         db.commit()
         db.refresh(new_post)
 
-        if educational_prob < 0.65:
+        if educational_prob < 0.80:
 
             review_post = under_review_posts(
                 user_id=user.id,
@@ -260,7 +260,7 @@ async def create_post(
                 response = requests.post(
                     jenkins_url,
                     params={"token": "reviewtrigger"},
-                    auth=("admin","11c79993fd37f53e50bac2b78c0fad885b"),
+                    auth=("admin",""),
                     timeout=10
                 )
 
@@ -279,6 +279,7 @@ async def create_post(
             "report_count": new_post.report_count,
             "is_reported": False,
             "is_subscribed": False,
+            "status": "pending" if educational_prob < 0.65 else "approved"
         }
 
     except HTTPException:
@@ -296,7 +297,9 @@ async def get_posts(
     db: Session = Depends(get_db)
 ):
     try:
-        all_posts = db.query(posts).order_by(posts.id.desc()).all()
+        all_posts = db.query(posts).filter(
+        posts.status.in_(["approved", "pending"])
+         ).order_by(posts.id.desc()).all()
 
         posts_data = []
         for post in all_posts:
@@ -494,3 +497,5 @@ async def check_pending(db: Session = Depends(get_db)):
             status_code=500,
             detail=str(e)
         )
+
+

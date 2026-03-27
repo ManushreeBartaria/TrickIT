@@ -1,6 +1,8 @@
+from turtle import pos
+
 from sqlalchemy.orm import Session
 
-from app.model.registeruser import under_review_posts, approved_posts, rejected_posts
+from app.model.registeruser import under_review_posts, approved_posts, rejected_posts, posts
 from app.services.llm_service import llm_check
 
 
@@ -25,8 +27,11 @@ async def process_post(post_id: int, db: Session):
 
         db.add(approved_entry)
         post.status = "approved"
-
+        db.query(posts).filter(posts.id == post.post_id).update({
+    posts.status: "approved"
+})
     else:
+
         rejected_entry = rejected_posts(
             post_id=post.post_id,
             reason="LLM detected non educational content"
@@ -34,7 +39,9 @@ async def process_post(post_id: int, db: Session):
 
         db.add(rejected_entry)
         post.status = "rejected"
-
+        db.query(posts).filter(posts.id == post.post_id).update({
+    posts.status: "rejected"
+})
     db.commit()
 
     return {
