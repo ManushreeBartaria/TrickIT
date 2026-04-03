@@ -16,46 +16,49 @@ pipeline {
         }
 
         stage('Create Dataset') {
-            steps {
-                script {
-                    def output = sh(
-                        script: '''
-                        cd backend
-                        source venv/bin/activate || true
-                        python -m app.services.dataset_creation
-                        ''',
-                        returnStdout: true
-                    ).trim()
+        steps {
+            script {
 
-                    echo output
+                def output = sh(
+                    script: '''
+                    cd backend
+                    ./venv/bin/python -m app.services.dataset_creation
+                    ''',
+                    returnStdout: true
+                ).trim()
 
-                    def matcher = output =~ /ROWS_ADDED=(\\d+)/
-                    if (matcher) {
-                        env.ROWS = matcher[0][1]
-                    } else {
-                        env.ROWS = "0"
-                    }
+                echo output
 
-                    echo "Rows Added: ${env.ROWS}"
+                def matcher = output =~ /ROWS_ADDED=(\\d+)/
+
+                if (matcher) {
+                    env.ROWS = matcher[0][1]
+                } else {
+                    env.ROWS = "0"
                 }
+
+                echo "Rows Added: ${env.ROWS}"
+
             }
         }
-
-        stage('Retrain Model') {
-            when {
-                expression {
-                    return env.ROWS.toInteger() > 10
-                }
-            }
-
-            steps {
-                sh '''
-                cd backend
-                source venv/bin/activate || true
-                python app/ml_model/train_model.py
-                '''
-            }
-        }
-
     }
+
+    stage('Retrain Model') {
+
+        when {
+            expression {
+                return env.ROWS.toInteger() > 10
+            }
+        }
+
+        steps {
+            sh '''
+            cd backend
+            ./venv/bin/python app/ml_model/train_model.py
+            '''
+        }
+    }
+
+}
+
 }
