@@ -10,7 +10,7 @@ pipeline {
         stage('Check Pending Posts') {
             steps {
                 sh '''
-                curl http://10.11.144.100:8000/api/check_pending
+                curl http://10.161.95.66:8000/api/check_pending
                 '''
             }
         }
