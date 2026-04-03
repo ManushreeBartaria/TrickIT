@@ -1,82 +1,83 @@
 pipeline {
-    agent any
+agent any
 
-   
-    triggers {
-        cron('H/1 * * * *')
+```
+
+triggers {
+    cron('H/1 * * * *')
+}
+
+stages {
+
+    stage('Setup Environment') {
+        steps {
+            sh '''
+            cd backend
+
+            if [ ! -d "venv" ]; then
+                echo "Creating virtual environment..."
+                python3 -m venv venv
+                ./venv/bin/pip install --upgrade pip
+                ./venv/bin/pip install -r requirements.txt
+            else
+                echo "Virtual environment already exists"
+            fi
+            '''
+        }
     }
 
-    stages {
+    stage('Check Pending Posts') {
+        steps {
+            sh '''
+            curl http://10.161.95.66:8000/api/check_pending
+            '''
+        }
+    }
 
-        stage('Setup Environment') {
-            steps {
-                sh '''
-                cd backend
+    stage('Create Dataset') {
+        steps {
+            script {
 
-                if [ ! -d "venv" ]; then
-                    echo "Creating virtual environment..."
-                    python3 -m venv venv
-                    ./venv/bin/pip install --upgrade pip
-                    ./venv/bin/pip install -r requirements.txt
-                else
-                    echo "Virtual environment already exists"
-                fi
-                '''
+                def output = sh(
+                    script: '''
+                    cd backend
+                    ./venv/bin/python -m app.services.dataset_creation
+                    ''',
+                    returnStdout: true
+                ).trim()
+
+                echo output
+
+                def matcher = output =~ /ROWS_ADDED=(\\d+)/
+
+                if (matcher) {
+                    env.ROWS = matcher[0][1]
+                } else {
+                    env.ROWS = "0"
+                }
+
+                echo "Rows Added: ${env.ROWS}"
+            }
+        }
+    }
+
+    stage('Retrain Model') {
+
+        when {
+            expression {
+                return env.ROWS.toInteger() > 10
             }
         }
 
-        stage('Check Pending Posts') {
-                steps {
-                    sh '''
-                    curl http://10.161.95.66:8000/api/check_pending
-                    '''
-                }
-            }
-
-        stage('Create Dataset') {
-            steps {
-                script {
-
-                    def output = sh(
-                        script: '''
-                        cd backend
-                        ./venv/bin/python -m app.services.dataset_creation
-                        ''',
-                        returnStdout: true
-                    ).trim()
-
-                    echo output
-
-                    def matcher = output =~ /ROWS_ADDED=(\\d+)/
-
-                    if (matcher) {
-                        env.ROWS = matcher[0][1]
-                    } else {
-                        env.ROWS = "0"
-                    }
-
-                    echo "Rows Added: ${env.ROWS}"
-                }
-            }
+        steps {
+            sh '''
+            cd backend
+            ./venv/bin/python app/ml_model/train_model.py
+            '''
         }
-
-        stage('Retrain Model') {
-
-            when {
-                expression {
-                    return env.ROWS.toInteger() > 10
-                }
-            }
-
-            steps {
-                sh '''
-                cd backend
-                ./venv/bin/python app/ml_model/train_model.py
-                '''
-            }
-        }
-
     }
-    ```
 
-    }
+}
+```
+
+}
