@@ -37,9 +37,11 @@ print(MODEL_DIR)
 model_path = os.path.abspath(os.path.join(MODEL_DIR, "lr_model.pkl"))
 vector_path = os.path.abspath(os.path.join(MODEL_DIR, "vectorizer.pkl"))
 selector_path = os.path.abspath(os.path.join(MODEL_DIR, "chi_selector.pkl"))
-selector = joblib.load(selector_path)
-vector = joblib.load(vector_path)
-model = joblib.load(model_path)
+def load_models():
+    selector = joblib.load(selector_path)
+    vector = joblib.load(vector_path)
+    model = joblib.load(model_path)
+    return selector, vector, model
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 SECRET_KEY = "hackathon-secret-key"
@@ -203,7 +205,7 @@ async def create_post(
 ):
     try:
         user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
-
+        selector, vector, model = load_models()
         vector_matrix = vector.transform([content])
         vector_matrix = selector.transform(vector_matrix)
         probs = model.predict_proba(vector_matrix)

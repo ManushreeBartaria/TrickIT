@@ -8,7 +8,15 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+MODEL_DIR = os.path.dirname(__file__)
 
+MODEL_PATH = os.path.join(MODEL_DIR, "lr_model.pkl")
+VECTORIZER_PATH = os.path.join(MODEL_DIR, "vectorizer.pkl")
+SELECTOR_PATH = os.path.join(MODEL_DIR, "chi_selector.pkl")
+
+NEW_MODEL_PATH = os.path.join(MODEL_DIR, "lr_model_new.pkl")
+NEW_VECTORIZER_PATH = os.path.join(MODEL_DIR, "vectorizer_new.pkl")
+NEW_SELECTOR_PATH = os.path.join(MODEL_DIR, "chi_selector_new.pkl")
 
 dataset = os.path.join(os.path.dirname(__file__), 'dataset1.csv')
 data = pd.read_csv(dataset, encoding='latin1', usecols=[0,1,2,3], header=0)
@@ -76,6 +84,24 @@ print("Accuracy:", accuracy_score(y_test, y_pred))
 print("Confusion Matrix:\n", confusion_matrix(y_test, y_pred))
 print("Classification Report:\n", classification_report(y_test, y_pred))
 
-joblib.dump(model, 'lr_model.pkl')
-joblib.dump(vectorizer, 'vectorizer.pkl')
-joblib.dump(selector, 'chi_selector.pkl')
+joblib.dump(model, NEW_MODEL_PATH)
+joblib.dump(vectorizer, NEW_VECTORIZER_PATH)
+joblib.dump(selector, NEW_SELECTOR_PATH)
+
+print("New models saved successfully.")
+
+def replace_models():
+
+    if os.path.exists(NEW_MODEL_PATH):
+        os.replace(NEW_MODEL_PATH, MODEL_PATH)
+
+    if os.path.exists(NEW_VECTORIZER_PATH):
+        os.replace(NEW_VECTORIZER_PATH, VECTORIZER_PATH)
+
+    if os.path.exists(NEW_SELECTOR_PATH):
+        os.replace(NEW_SELECTOR_PATH, SELECTOR_PATH)
+
+    print("Model replacement completed.")
+
+
+replace_models()
