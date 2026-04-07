@@ -118,3 +118,20 @@ class community_creators(Base):
     name = Column(String(100), nullable=False)
     upi_id = Column(String(100), nullable=False)
     joined_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------
+# CHAT MESSAGES
+# ---------------------------------------------------
+
+class chat_messages(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    sender_user_id = Column(Integer, ForeignKey("register_user.id"), nullable=False)
+    receiver_user_id = Column(Integer, ForeignKey("register_user.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+    sender = relationship("registeruser", foreign_keys=[sender_user_id])
+    receiver = relationship("registeruser", foreign_keys=[receiver_user_id])

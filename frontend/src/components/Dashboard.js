@@ -229,6 +229,30 @@ const styles = {
         fontSize: '14px',
         fontWeight: '600',
     },
+    viewCommunityBtn: {
+        backgroundColor: '#fff',
+        color: '#0a66c2',
+        border: '2px solid #0a66c2',
+        padding: '8px 16px',
+        borderRadius: '16px',
+        cursor: 'pointer',
+        marginTop: '8px',
+        width: '100%',
+        fontWeight: '600',
+        fontSize: '14px',
+    },
+    disabledBtn: {
+        backgroundColor: '#f0f0f0',
+        color: '#aaa',
+        border: '2px solid #ddd',
+        padding: '8px 16px',
+        borderRadius: '16px',
+        cursor: 'not-allowed',
+        marginTop: '8px',
+        width: '100%',
+        fontWeight: '600',
+        fontSize: '14px',
+    },
     formInput: {
         width: '100%',
         padding: '10px 12px',
@@ -260,6 +284,7 @@ const Dashboard = () => {
     const [communityForm, setCommunityForm] = useState({ name: '', upi_id: '' });
     const [communityLoading, setCommunityLoading] = useState(false);
     const [communityError, setCommunityError] = useState('');
+    const [hasSubscriptions, setHasSubscriptions] = useState(false);
 
     const navigate = useNavigate();
 
@@ -287,6 +312,8 @@ const Dashboard = () => {
         try {
             const response = await authService.getPosts();
             setPosts(response.data);
+            const anySubscribed = response.data.some(p => p.is_subscribed);
+            setHasSubscriptions(anySubscribed);
         } catch (error) {
             console.error('Error loading posts:', error);
         }
@@ -356,9 +383,15 @@ const Dashboard = () => {
         try {
             const response = await authService.subscribePost(postId);
             const { is_subscribed } = response.data;
-            setPosts(prev => prev.map(p =>
-                p.id === postId ? { ...p, is_subscribed } : p
-            ));
+            setPosts(prev => {
+                const updated = prev.map(p =>
+                    p.id === postId ? { ...p, is_subscribed } : p
+                );
+                // Check if any post is subscribed
+                const anySubscribed = updated.some(p => p.is_subscribed);
+                setHasSubscriptions(anySubscribed);
+                return updated;
+            });
         } catch (error) {
             if (error.response?.data?.detail) alert(error.response.data.detail);
         }
@@ -366,6 +399,10 @@ const Dashboard = () => {
 
     const handleJoinCommunityClick = () => {
         if (communityStatus === 'yes') return;
+        if (!hasSubscriptions) {
+            alert('You must subscribe to at least one creator before joining the community.');
+            return;
+        }
         setCommunityForm({ name: '', upi_id: '' });
         setCommunityError('');
         setShowCommunityModal(true);
@@ -417,11 +454,28 @@ const Dashboard = () => {
 
                     {/* Join Community Button */}
                     <button
-                        style={communityStatus === 'yes' ? styles.alreadyJoinedBtn : styles.joinBtn}
+                        style={
+                            communityStatus === 'yes'
+                                ? styles.alreadyJoinedBtn
+                                : !hasSubscriptions
+                                ? styles.disabledBtn
+                                : styles.joinBtn
+                        }
                         onClick={handleJoinCommunityClick}
+                        title={!hasSubscriptions && communityStatus !== 'yes' ? 'Subscribe to a creator first to join the community' : ''}
                     >
                         {communityStatus === 'yes' ? '✓ Already Joined' : '🌐 Join Community'}
                     </button>
+
+                    {/* View Community Button - only for community members */}
+                    {communityStatus === 'yes' && (
+                        <button
+                            style={styles.viewCommunityBtn}
+                            onClick={() => navigate('/community')}
+                        >
+                            💬 View Community
+                        </button>
+                    )}
                 </div>
 
                 <div style={styles.nav}>

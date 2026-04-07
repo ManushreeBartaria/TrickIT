@@ -1,6 +1,8 @@
 import stat
 from app.model.registeruser import community_creators
 from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
+from app.schemas.register import SendMessageRequest, MessageResponse, CreatorResponse
+from app.model.registeruser import chat_messages
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connections import get_db
@@ -497,3 +499,219 @@ async def community_status(
     db: Session = Depends(get_db)
 ):
     return {"message": "Status fetched", "status": current_user.status or "no"}
+
+
+# ---------------------------------------------------
+# GET SUBSCRIBED CREATORS (for Community page)
+# ---------------------------------------------------
+
+@router.get("/community/creators", response_model=List[CreatorResponse])
+async def get_subscribed_creators(
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns all users that the current user is subscribed to
+    AND who are community creators (joined community).
+    """
+    try:
+        # Get all users this person is subscribed to
+        subs = db.query(subscriptions).filter(
+            subscriptions.subscriber_user_id == current_user.user_id
+        ).all()
+
+        creators_list = []
+        for sub in subs:
+            # Check if the subscribed-to user is a community creator
+            target_profile = db.query(userprofile).filter(
+                userprofile.user_id == sub.subscribed_to_user_id
+            ).first()
+
+            if not target_profile or target_profile.status != "yes":
+                continue
+
+            target_user = db.query(registeruser).filter(
+                registeruser.id == sub.subscribed_to_user_id
+            ).first()
+
+            if target_user:
+                creators_list.append({
+                    "user_id": target_user.id,
+                    "username": target_user.username,
+                    "about": target_profile.about,
+                    "profile_pic": target_profile.profile_pic,
+                })
+
+        return creators_list
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------
+# GET CHAT HISTORY
+# ---------------------------------------------------
+
+@router.get("/chat/{other_user_id}")
+async def get_chat_history(
+    other_user_id: int,
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns chat history between the current user and other_user_id.
+    Requires that: the other user is a community creator AND
+    the current user is subscribed to them (or vice versa).
+    """
+    try:
+        other_user = db.query(registeruser).filter(
+            registeruser.id == other_user_id
+        ).first()
+        if not other_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        other_profile = db.query(userprofile).filter(
+            userprofile.user_id == other_user_id
+        ).first()
+
+        # Authorization: must be subscribed in at least one direction,
+        # and the other party must be a community creator
+        is_subscribed = db.query(subscriptions).filter(
+            subscriptions.subscriber_user_id == current_user.user_id,
+            subscriptions.subscribed_to_user_id == other_user_id
+        ).first()
+
+        creator_subscribed_to_me = db.query(subscriptions).filter(
+            subscriptions.subscriber_user_id == other_user_id,
+            subscriptions.subscribed_to_user_id == current_user.user_id
+        ).first()
+
+        other_is_creator = other_profile and other_profile.status == "yes"
+        current_is_creator = current_user.status == "yes"
+
+        # Allow chat if: subscriber→creator OR creator→subscriber
+        allowed = (is_subscribed and other_is_creator) or \
+                  (creator_subscribed_to_me and current_is_creator) or \
+                  (other_is_creator and current_is_creator)
+
+        if not allowed:
+            raise HTTPException(
+                status_code=403,
+                detail="You must be subscribed to this creator to chat."
+            )
+
+        # Fetch messages between the two users
+        messages = db.query(chat_messages).filter(
+            (
+                (chat_messages.sender_user_id == current_user.user_id) &
+                (chat_messages.receiver_user_id == other_user_id)
+            ) | (
+                (chat_messages.sender_user_id == other_user_id) &
+                (chat_messages.receiver_user_id == current_user.user_id)
+            )
+        ).order_by(chat_messages.timestamp.asc()).all()
+
+        messages_data = [
+            {
+                "id": msg.id,
+                "content": msg.content,
+                "timestamp": msg.timestamp.isoformat(),
+                "is_mine": msg.sender_user_id == current_user.user_id,
+                "sender_username": msg.sender.username,
+            }
+            for msg in messages
+        ]
+
+        return {
+            "other_user": {
+                "user_id": other_user.id,
+                "username": other_user.username,
+                "profile_pic": other_profile.profile_pic if other_profile else None,
+            },
+            "messages": messages_data,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------
+# SEND MESSAGE
+# ---------------------------------------------------
+
+@router.post("/chat/{other_user_id}")
+async def send_message(
+    other_user_id: int,
+    body: SendMessageRequest,
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Sends a message from current_user to other_user_id.
+    Same subscription-based access control as GET /chat/{other_user_id}.
+    """
+    try:
+        if not body.content.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+        other_user = db.query(registeruser).filter(
+            registeruser.id == other_user_id
+        ).first()
+        if not other_user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        other_profile = db.query(userprofile).filter(
+            userprofile.user_id == other_user_id
+        ).first()
+
+        is_subscribed = db.query(subscriptions).filter(
+            subscriptions.subscriber_user_id == current_user.user_id,
+            subscriptions.subscribed_to_user_id == other_user_id
+        ).first()
+
+        creator_subscribed_to_me = db.query(subscriptions).filter(
+            subscriptions.subscriber_user_id == other_user_id,
+            subscriptions.subscribed_to_user_id == current_user.user_id
+        ).first()
+
+        other_is_creator = other_profile and other_profile.status == "yes"
+        current_is_creator = current_user.status == "yes"
+
+        allowed = (is_subscribed and other_is_creator) or \
+                  (creator_subscribed_to_me and current_is_creator) or \
+                  (other_is_creator and current_is_creator)
+
+        if not allowed:
+            raise HTTPException(
+                status_code=403,
+                detail="You must be subscribed to this creator to chat."
+            )
+
+        new_msg = chat_messages(
+            sender_user_id=current_user.user_id,
+            receiver_user_id=other_user_id,
+            content=body.content.strip(),
+        )
+        db.add(new_msg)
+        db.commit()
+        db.refresh(new_msg)
+
+        sender_user = db.query(registeruser).filter(
+            registeruser.id == current_user.user_id
+        ).first()
+
+        return {
+            "id": new_msg.id,
+            "content": new_msg.content,
+            "timestamp": new_msg.timestamp.isoformat(),
+            "is_mine": True,
+            "sender_username": sender_user.username,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
