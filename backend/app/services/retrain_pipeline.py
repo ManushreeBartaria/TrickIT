@@ -7,7 +7,7 @@ COUNTER_FILE = os.path.join(
     "retrain_counter.txt"
 )
 
-THRESHOLD = 10
+THRESHOLD = 1
 
 
 def get_counter():

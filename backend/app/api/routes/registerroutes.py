@@ -28,21 +28,14 @@ from app.services.check_pending import check_and_trigger
 from app.services.post_processing_service import process_post
 from app.services.retrain_pipeline import retrain_if_needed
 import requests
+from app.ml_model import model_loader
 router = APIRouter()
 UPLOAD_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "uploads")
 )
 BASE_DIR = os.path.dirname(__file__)
 MODEL_DIR = os.path.join(BASE_DIR, "..", "..", "ml_model")
-print(MODEL_DIR)
-model_path = os.path.abspath(os.path.join(MODEL_DIR, "lr_model.pkl"))
-vector_path = os.path.abspath(os.path.join(MODEL_DIR, "vectorizer.pkl"))
-selector_path = os.path.abspath(os.path.join(MODEL_DIR, "chi_selector.pkl"))
-def load_models():
-    selector = joblib.load(selector_path)
-    vector = joblib.load(vector_path)
-    model = joblib.load(model_path)
-    return selector, vector, model
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 SECRET_KEY = "hackathon-secret-key"
@@ -206,15 +199,17 @@ async def create_post(
 ):
     try:
         user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
-        selector, vector, model = load_models()
-        vector_matrix = vector.transform([content])
-        vector_matrix = selector.transform(vector_matrix)
-        probs = model.predict_proba(vector_matrix)
+        vector_matrix = model_loader.vectorizer.transform([content])
+        vector_matrix = model_loader.selector.transform(vector_matrix)
+        probs = model_loader.model.predict_proba(vector_matrix)
 
-        classes = model.classes_.tolist()
+        classes = model_loader.model.classes_.tolist()
+        print("Classes:", classes)
+        print("Raw probabilities:", probs)
         edu_index = classes.index('educational')
         educational_prob = probs[0][edu_index]
-
+        
+    
         print("Educational probability:", educational_prob)
 
         new_post = posts(

@@ -8,7 +8,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-
+from app.ml_model import model_loader
 
 MODEL_DIR = os.path.dirname(__file__)
 
@@ -22,6 +22,7 @@ NEW_SELECTOR_PATH = os.path.join(MODEL_DIR, "chi_selector_new.pkl")
 
 
 def clean_text(text):
+    text = str(text)   # ensures no float/NaN errors
     text = text.lower()
     text = re.sub(r'[^a-z ]', ' ', text)
     return text
@@ -57,6 +58,9 @@ def retrain_model():
     )
 
     data = data[data['label'] != 'label']
+
+    # handle missing values safely
+    data[['text','keywords','category']] = data[['text','keywords','category']].fillna("")
 
     data['combined_text'] = (
         data['text'].astype(str) + ' ' +
@@ -113,3 +117,7 @@ def retrain_model():
     print("New models saved successfully.")
 
     replace_models()
+    model_loader.load_models()
+    
+if __name__ == "__main__":
+    retrain_model()    
