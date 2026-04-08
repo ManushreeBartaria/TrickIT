@@ -4,7 +4,7 @@ import os
 from app.ml_model import model_loader
 from app.database.connections import Base, engine
 from app.api.routes import registerroutes
-from app.model.registeruser import registeruser,forgotpasswordOTP,userprofile,posts,post_reports,under_review_posts,subscriptions,approved_posts,rejected_posts
+from app.model.registeruser import registeruser,forgotpasswordOTP,userprofile,posts,post_reports,under_review_posts,subscriptions,approved_posts,rejected_posts,chat_messages
 from fastapi.middleware.cors import CORSMiddleware
 from app.ml_model.model_loader import load_models
 app = FastAPI()

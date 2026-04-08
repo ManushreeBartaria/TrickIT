@@ -182,3 +182,35 @@ class JoinCommunityResponse(BaseModel):
 
     model_config = {"from_attributes": True}
 
+
+# ------------------------------------------------
+# CHAT SCHEMAS
+# ------------------------------------------------
+
+class SendMessageRequest(BaseModel):
+    content: str
+
+    model_config = {"from_attributes": True}
+
+class MessageResponse(BaseModel):
+    id: int
+    content: str
+    timestamp: datetime
+    is_mine: bool
+    sender_username: str
+
+    model_config = {"from_attributes": True}
+
+class ChatHistoryResponse(BaseModel):
+    other_user: dict
+    messages: list
+
+    model_config = {"from_attributes": True}
+
+class CreatorResponse(BaseModel):
+    user_id: int
+    username: str
+    about: Optional[str] = None
+    profile_pic: Optional[str] = None
+
+    model_config = {"from_attributes": True}
