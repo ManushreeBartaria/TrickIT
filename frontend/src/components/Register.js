@@ -13,17 +13,6 @@ const styles = {
         justifyContent: 'center',
         padding: '2rem',
     },
-    inputGroup: {
-        marginBottom: '1.5rem',
-        position: 'relative',
-    },
-    inputLabel: {
-        display: 'block',
-        marginBottom: '0.5rem',
-        color: colors.text,
-        fontSize: '0.9rem',
-        fontWeight: '500',
-    },
     passwordContainer: {
         position: 'relative',
         width: '100%',
@@ -43,9 +32,6 @@ const styles = {
         fontWeight: '500',
         display: 'flex',
         alignItems: 'center',
-        '&:hover': {
-            backgroundColor: 'rgba(0, 0, 0, 0.05)',
-        },
     },
     validationMessage: {
         fontSize: '0.8rem',
@@ -84,14 +70,9 @@ const styles = {
         border: `2px solid ${colors.border}`,
         borderRadius: '8px',
         fontSize: '1rem',
-        transition: 'border-color 0.2s ease',
         outline: 'none',
-        '&:focus': {
-            borderColor: colors.primary,
-        },
-        '&:hover': {
-            borderColor: colors.primary + '80',
-        },
+        marginBottom: '1rem',
+        boxSizing: 'border-box',
     },
     button: {
         width: '100%',
@@ -104,14 +85,6 @@ const styles = {
         fontWeight: '600',
         cursor: 'pointer',
         marginTop: '1.5rem',
-        transition: 'background-color 0.2s ease, transform 0.1s ease',
-        '&:hover': {
-            backgroundColor: colors.primary + 'e6',
-            transform: 'translateY(-1px)',
-        },
-        '&:active': {
-            transform: 'translateY(0)',
-        },
     },
     link: {
         color: colors.primary,
@@ -121,10 +94,6 @@ const styles = {
         textAlign: 'center',
         marginTop: '1.5rem',
         fontWeight: '500',
-        transition: 'color 0.2s ease',
-        '&:hover': {
-            color: colors.primary + 'cc',
-        },
     },
     error: {
         color: colors.error,
@@ -174,37 +143,32 @@ const Register = () => {
     const [passwordStrength, setPasswordStrength] = useState(0);
     const navigate = useNavigate();
 
-    // Remove warning about unused variables
     const togglePassword = () => setShowPassword(!showPassword);
     const toggleConfirmPassword = () => setShowConfirmPassword(!showConfirmPassword);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // Validate email
         if (!isValidEmail(formData.email)) {
             setError(getEmailValidationMessage());
             return;
         }
 
-        
         if (!isValidPassword(formData.password)) {
             setError(getPasswordValidationMessage());
             return;
         }
 
-        
         if (formData.password !== formData.confirmPassword) {
             setError('Passwords do not match');
             return;
         }
 
         try {
-            
             const { confirmPassword, ...registrationData } = formData;
             const response = await authService.register(registrationData);
             if (response.data.message === "User registered successfully") {
-                navigate('/login'); 
+                navigate('/login');
             }
         } catch (err) {
             setError(err.response?.data?.detail || 'Registration failed');
@@ -269,7 +233,7 @@ const Register = () => {
                             {showPassword ? "Hide" : "Show"}
                         </button>
                         <div style={styles.strengthIndicator}>
-                            <div 
+                            <div
                                 style={{
                                     ...styles.strengthProgress,
                                     width: `${passwordStrength}%`,
