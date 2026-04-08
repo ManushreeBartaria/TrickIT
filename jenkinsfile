@@ -1,20 +1,7 @@
 pipeline {
 
-    agent {
-        kubernetes {
-            yaml '''
-apiVersion: v1
-kind: Pod
-spec:
-  containers:
-  - name: python
-    image: python:3.10
-    command:
-    - cat
-    tty: true
-'''
-        }
-    }
+    agent any
+
     options{
         disableConcurrentBuilds()
     }
@@ -24,23 +11,6 @@ spec:
     }
 
     stages {
-
-        stage('Setup Environment') {
-            steps {
-                container('python') {
-                    sh '''
-                    if [ ! -d "venv" ]; then
-                        echo "Creating virtual environment..."
-                        python -m venv venv
-                        ./venv/bin/pip install --upgrade pip
-                        ./venv/bin/pip install -r requirements.txt
-                    else
-                        echo "Using cached virtual environment"
-                    fi
-                    '''
-                }
-            }
-        }
 
         stage('Check Pending Posts') {
             steps {
@@ -52,50 +22,12 @@ spec:
             }
         }
 
-        stage('Create Dataset') {
+        stage('Trigger ML Pipeline') {
             steps {
-                container('python') {
-                    script {
-
-                        def output = sh(
-                            script: '''
-                            ./venv/bin/python -m backend.app.services.dataset_creation
-                            ''',
-                            returnStdout: true
-                        ).trim()
-
-                        echo output
-
-                        def matcher = output =~ /ROWS_ADDED=(\\d+)/
-
-                        if (matcher) {
-                            env.ROWS = matcher[0][1]
-                        } else {
-                            env.ROWS = "0"
-                        }
-
-                        echo "Rows Added: ${env.ROWS}"
-                    }
-                }
+                sh '''
+                curl -X POST http://10.11.144.100:8000/api/retrain_pipeline
+                '''
             }
         }
-
-        stage('Retrain Model') {
-
-            when {
-                expression {
-                    return env.ROWS.toInteger() > 10
-                }
-            }
-
-            steps {
-                container('python') {
-                    sh '''
-                    ./venv/bin/python backend/app/ml_model/train_model.py
-                    '''
-                }
-            }
-        }
-
     }
 }

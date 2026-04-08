@@ -26,6 +26,7 @@ import sklearn
 from app.services.llm_service import llm_check
 from app.services.check_pending import check_and_trigger
 from app.services.post_processing_service import process_post
+from app.services.retrain_pipeline import retrain_if_needed
 import requests
 router = APIRouter()
 UPLOAD_DIR = os.path.abspath(
@@ -500,4 +501,12 @@ async def check_pending(db: Session = Depends(get_db)):
             detail=str(e)
         )
 
+@router.post("/retrain_pipeline")
+def trigger_retrain_pipeline():
+    
+    result = retrain_if_needed()
 
+    return {
+        "message": "Pipeline executed",
+        "details": result
+    }
