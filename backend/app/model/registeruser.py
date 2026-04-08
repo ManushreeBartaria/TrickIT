@@ -44,9 +44,10 @@ class posts(Base):
     media_url = Column(String(255), nullable=True)
     media_type = Column(String(50), nullable=True)
     report_count = Column(Integer, default=0, nullable=False)
-
+    status = Column(String(10), default="pending", nullable=False)  
     user = relationship("registeruser", back_populates="posts")
     reports = relationship("post_reports", back_populates="post", cascade="all, delete-orphan")
+    retrained=Column(String(10), default="no", nullable=False) 
 
 class post_reports(Base):
     __tablename__ = "post_reports"

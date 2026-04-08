@@ -5,7 +5,7 @@ from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
 from app.schemas.register import SendMessageRequest, MessageResponse, CreatorResponse
 from app.model.registeruser import chat_messages
 from turtle import back
-
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connections import get_db
@@ -27,19 +27,17 @@ import joblib
 import sklearn
 from app.services.llm_service import llm_check
 from app.services.check_pending import check_and_trigger
+from app.services.post_processing_service import process_post
+from app.services.retrain_pipeline import retrain_if_needed
+import requests
+from app.ml_model import model_loader
 router = APIRouter()
 UPLOAD_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "uploads")
 )
 BASE_DIR = os.path.dirname(__file__)
 MODEL_DIR = os.path.join(BASE_DIR, "..", "..", "ml_model")
-print(MODEL_DIR)
-model_path = os.path.abspath(os.path.join(MODEL_DIR, "lr_model.pkl"))
-vector_path = os.path.abspath(os.path.join(MODEL_DIR, "vectorizer.pkl"))
-selector_path = os.path.abspath(os.path.join(MODEL_DIR, "chi_selector.pkl"))
-selector = joblib.load(selector_path)
-vector = joblib.load(vector_path)
-model = joblib.load(model_path)
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 SECRET_KEY = "hackathon-secret-key"
@@ -203,15 +201,17 @@ async def create_post(
 ):
     try:
         user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
+        vector_matrix = model_loader.vectorizer.transform([content])
+        vector_matrix = model_loader.selector.transform(vector_matrix)
+        probs = model_loader.model.predict_proba(vector_matrix)
 
-        vector_matrix = vector.transform([content])
-        vector_matrix = selector.transform(vector_matrix)
-        probs = model.predict_proba(vector_matrix)
-
-        classes = model.classes_.tolist()
+        classes = model_loader.model.classes_.tolist()
+        print("Classes:", classes)
+        print("Raw probabilities:", probs)
         edu_index = classes.index('educational')
         educational_prob = probs[0][edu_index]
-
+        
+    
         print("Educational probability:", educational_prob)
 
         new_post = posts(
@@ -239,7 +239,7 @@ async def create_post(
         db.commit()
         db.refresh(new_post)
 
-        if educational_prob < 0.65:
+        if educational_prob < 0.80:
 
             review_post = under_review_posts(
                 user_id=user.id,
@@ -254,10 +254,21 @@ async def create_post(
             db.add(review_post)
             db.commit()
 
-        # -------------------------------
-        # RETURN RESPONSE (MATCHES SCHEMA)
-        # -------------------------------
+            try:
+                jenkins_url = "http://localhost:8080/job/trickit-pipeline/build"
 
+                response = requests.post(
+                    jenkins_url,
+                    params={"token": "reviewtrigger"},
+                    auth=("admin",""),
+                    timeout=10
+                )
+
+                print("Jenkins status:", response.status_code)
+
+            except Exception as e:
+                print("Jenkins trigger failed:", e)
+        
         return {
             "id": new_post.id,
             "username": user.username,
@@ -268,6 +279,7 @@ async def create_post(
             "report_count": new_post.report_count,
             "is_reported": False,
             "is_subscribed": False,
+            "status": "pending" if educational_prob < 0.65 else "approved"
         }
 
     except HTTPException:
@@ -285,7 +297,9 @@ async def get_posts(
     db: Session = Depends(get_db)
 ):
     try:
-        all_posts = db.query(posts).order_by(posts.id.desc()).all()
+        all_posts = db.query(posts).filter(
+        posts.status.in_(["approved", "pending"])
+         ).order_by(posts.id.desc()).all()
 
         posts_data = []
         for post in all_posts:
@@ -418,51 +432,21 @@ async def toggle_subscribe(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-    
-@router.post("/llm-processing")
-async def llm_processing(db: Session = Depends(get_db)):
+
+@router.post("/llm-processing/{post_id}")
+async def llm_processing(post_id: int, db: Session = Depends(get_db)):
 
     try:
-        pending_posts = db.query(under_review_posts).filter(
-            under_review_posts.status == "pending"
-        ).all()
-        processed_posts = []
-        for post in pending_posts:
-            content = post.content
-            result = llm_check(content)
-
-            if result == "educational":
-
-                approved_entry = approved_posts(
-                    post_id=post.post_id
-                )
-
-                db.add(approved_entry)
-                post.status = "approved"
-
-            else:
-                rejected_entry = rejected_posts(
-                    post_id=post.post_id,
-                    reason="LLM detected non educational content"
-                )
-
-                db.add(rejected_entry)
-                post.status = "rejected"
-
-            processed_posts.append(post.post_id)
-
-        db.commit()
-        return {
-            "message": "LLM processing completed",
-            "processed_posts": processed_posts
-        }
+        result = await process_post(post_id, db)
+        return result
 
     except Exception as e:
-        db.rollback()
         raise HTTPException(
             status_code=500,
             detail=str(e)
-        )    
+        )
+        
+        
 @router.post("/join-community", response_model=JoinCommunityResponse)
 async def join_community(
     data: JoinCommunityRequest,
@@ -505,7 +489,7 @@ async def community_status(
 @router.get("/check_pending")
 async def check_pending(db: Session = Depends(get_db)):
     try:
-        result = check_and_trigger(db)
+        result = await check_and_trigger(db)
         return result
 
     except Exception as e:
@@ -730,3 +714,14 @@ async def send_message(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+        )
+
+@router.post("/retrain_pipeline")
+def trigger_retrain_pipeline():
+    
+    result = retrain_if_needed()
+
+    return {
+        "message": "Pipeline executed",
+        "details": result
+    }
