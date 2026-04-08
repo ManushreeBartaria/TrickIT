@@ -1,9 +1,18 @@
 pipeline {
 
     agent {
-        docker {
-            image 'python:3.10'
-            args '-u root'
+        kubernetes {
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  containers:
+  - name: python
+    image: python:3.10
+    command:
+    - cat
+    tty: true
+'''
         }
     }
     options{
@@ -18,53 +27,55 @@ pipeline {
 
         stage('Setup Environment') {
             steps {
-                sh '''
-                echo "Checking virtual environment..."
-
-                if [ ! -d "venv" ]; then
-                    echo "Creating virtual environment..."
-                    python -m venv venv
-
-                    echo "Installing dependencies..."
-                    ./venv/bin/pip install --upgrade pip
-                    ./venv/bin/pip install -r requirements.txt
-                else
-                    echo "Using cached virtual environment"
-                fi
-                '''
+                container('python') {
+                    sh '''
+                    if [ ! -d "venv" ]; then
+                        echo "Creating virtual environment..."
+                        python -m venv venv
+                        ./venv/bin/pip install --upgrade pip
+                        ./venv/bin/pip install -r requirements.txt
+                    else
+                        echo "Using cached virtual environment"
+                    fi
+                    '''
+                }
             }
         }
 
         stage('Check Pending Posts') {
             steps {
-                sh '''
-                curl http://10.11.144.100:8000/api/check_pending
-                '''
+                container('python') {
+                    sh '''
+                    curl http://10.11.144.100:8000/api/check_pending
+                    '''
+                }
             }
         }
 
         stage('Create Dataset') {
             steps {
-                script {
+                container('python') {
+                    script {
 
-                    def output = sh(
-                        script: '''
-                        ./venv/bin/python -m backend.app.services.dataset_creation
-                        ''',
-                        returnStdout: true
-                    ).trim()
+                        def output = sh(
+                            script: '''
+                            ./venv/bin/python -m backend.app.services.dataset_creation
+                            ''',
+                            returnStdout: true
+                        ).trim()
 
-                    echo output
+                        echo output
 
-                    def matcher = output =~ /ROWS_ADDED=(\\d+)/
+                        def matcher = output =~ /ROWS_ADDED=(\\d+)/
 
-                    if (matcher) {
-                        env.ROWS = matcher[0][1]
-                    } else {
-                        env.ROWS = "0"
+                        if (matcher) {
+                            env.ROWS = matcher[0][1]
+                        } else {
+                            env.ROWS = "0"
+                        }
+
+                        echo "Rows Added: ${env.ROWS}"
                     }
-
-                    echo "Rows Added: ${env.ROWS}"
                 }
             }
         }
@@ -78,9 +89,11 @@ pipeline {
             }
 
             steps {
-                sh '''
-                ./venv/bin/python backend/app/ml_model/train_model.py
-                '''
+                container('python') {
+                    sh '''
+                    ./venv/bin/python backend/app/ml_model/train_model.py
+                    '''
+                }
             }
         }
 
