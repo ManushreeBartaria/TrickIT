@@ -258,7 +258,7 @@ async def create_post(
                 response = requests.post(
                     jenkins_url,
                     params={"token": "reviewtrigger"},
-                    auth=("admin",""),
+                    auth=("admin","11c79993fd37f53e50bac2b78c0fad885b"),
                     timeout=10
                 )
 
