@@ -14,11 +14,10 @@ pipeline {
 
         stage('Check Pending Posts') {
             steps {
-                container('python') {
+                
                     sh '''
                     curl http://10.11.144.100:8000/api/check_pending
                     '''
-                }
             }
         }
 
