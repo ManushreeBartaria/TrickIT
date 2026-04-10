@@ -7,6 +7,8 @@ class RegisterUser(BaseModel):
     fullname: str
     email: EmailStr
     password: str
+    user_type: Optional[str] = "person"  # person / company
+    transaction_id: Optional[str] = None  # required for company registration
 
     model_config = {
         "from_attributes": True
@@ -17,6 +19,7 @@ class RegisterResponse(BaseModel):
     user_id: int
     fullname: str
     email: EmailStr
+    user_type: Optional[str] = "person"
 
     model_config = {
         "from_attributes": True
@@ -34,6 +37,7 @@ class LoginResponse(BaseModel):
     message: str
     access_token: str
     token_type: str
+    user_type: Optional[str] = "person"
 
     model_config = {
         "from_attributes": True
@@ -173,6 +177,7 @@ class RejectedPostResponse(BaseModel):
 class JoinCommunityRequest(BaseModel):
     name: str
     upi_id: str
+    transaction_id: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -214,3 +219,29 @@ class CreatorResponse(BaseModel):
     profile_pic: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+
+# ------------------------------------------------
+# PAYMENT SCHEMAS
+# ------------------------------------------------
+
+class PaymentVerifyRequest(BaseModel):
+    transaction_id: str
+    source_type: str   # company_register / join_community / subscribe / boost_post
+    source_id: int     # user_id or post_id
+
+    model_config = {"from_attributes": True}
+
+
+class PaymentVerifyResponse(BaseModel):
+    message: str
+    status: str   # paid / unpaid / pending
+
+    model_config = {"from_attributes": True}
+
+
+class BoostPostRequest(BaseModel):
+    post_id: int
+    transaction_id: str
+
+    model_config = {"from_attributes": True}

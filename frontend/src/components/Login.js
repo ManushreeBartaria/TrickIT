@@ -4,6 +4,8 @@ import { authService } from '../services/api';
 import { colors } from '../styles/colors';
 import { isValidEmail, isValidPassword, getEmailValidationMessage, getPasswordValidationMessage } from '../utils/validation';
 
+const QR_URL = 'http://localhost:8000/uploads/qr.png';
+
 const styles = {
     container: {
         minHeight: '100vh',
@@ -50,6 +52,7 @@ const styles = {
         border: `1px solid ${colors.border}`,
         borderRadius: '4px',
         fontSize: '16px',
+        boxSizing: 'border-box',
     },
     button: {
         width: '100%',
@@ -76,18 +79,37 @@ const styles = {
         fontSize: '14px',
         textAlign: 'center',
         marginBottom: '1rem',
-    }
+    },
+    // User type toggle
+    toggleRow: {
+        display: 'flex',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        border: `1.5px solid ${colors.primary}`,
+        marginBottom: '1.25rem',
+    },
+    toggleBtn: (active) => ({
+        flex: 1,
+        padding: '0.55rem 0',
+        border: 'none',
+        cursor: 'pointer',
+        fontWeight: '600',
+        fontSize: '14px',
+        backgroundColor: active ? colors.primary : '#fff',
+        color: active ? '#fff' : colors.primary,
+        transition: 'background 0.2s',
+    }),
 };
 
 const Login = () => {
     const [credentials, setCredentials] = useState({ email: '', password: '' });
     const [error, setError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
+    const [userType, setUserType] = useState('person');
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        
 
         if (!isValidEmail(credentials.email)) {
             setError(getEmailValidationMessage());
@@ -100,9 +122,10 @@ const Login = () => {
         }
 
         try {
-            const response = await authService.login(credentials);
+            const response = await authService.login({ ...credentials, user_type: userType });
             console.log('Login response:', response.data);
             localStorage.setItem('token', `Bearer ${response.data.access_token}`);
+            localStorage.setItem('user_type', response.data.user_type || userType);
             navigate('/dashboard');
         } catch (err) {
             console.error('Login error:', err.response?.data);
@@ -121,6 +144,25 @@ const Login = () => {
         <div style={styles.container}>
             <div style={styles.formContainer}>
                 <h1 style={styles.title}>Sign in to TrickIT</h1>
+
+                {/* User type toggle */}
+                <div style={styles.toggleRow}>
+                    <button
+                        type="button"
+                        style={styles.toggleBtn(userType === 'person')}
+                        onClick={() => setUserType('person')}
+                    >
+                        👤 Person
+                    </button>
+                    <button
+                        type="button"
+                        style={styles.toggleBtn(userType === 'company')}
+                        onClick={() => setUserType('company')}
+                    >
+                        🏢 Company / Startup
+                    </button>
+                </div>
+
                 {error && <div style={styles.error}>{error}</div>}
                 <form onSubmit={handleSubmit}>
                     <input
