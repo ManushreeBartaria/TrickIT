@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 import os
+from app.ml_model import model_loader
 from app.database.connections import Base, engine
 from app.api.routes import registerroutes
 from app.model.registeruser import registeruser,forgotpasswordOTP,userprofile,posts,post_reports,under_review_posts,subscriptions,approved_posts,rejected_posts,chat_messages,payments
 from fastapi.middleware.cors import CORSMiddleware
-
+from app.ml_model.model_loader import load_models
 app = FastAPI()
 
 origins = [
@@ -29,6 +30,13 @@ Base.metadata.create_all(bind=engine)
 
 app.include_router(registerroutes.router, prefix="/api", tags=["register"])
 
+
+@app.on_event("startup")
+def startup_event():
+    load_models()
+    print(model_loader.vectorizer)
+    print(model_loader.selector)
+    print(model_loader.model)
 @app.get("/")
 def health_check():
     return {"Hello": "World"}

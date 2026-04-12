@@ -1,28 +1,29 @@
-    
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-import requests
 
-def check_and_trigger(db: Session):
-    result = db.execute(
-        text("SELECT COUNT(*) FROM under_review_posts WHERE status='pending'")
-    )
-    count = result.scalar()
+from app.services.post_processing_service import process_post
 
-    print("Pending count:", count)
 
-    if count > 0:
-        print("Triggering LLM processing...")
+async def check_and_trigger(db: Session):
 
-        response = requests.post(
-            "http://localhost:8000/llm-processing"
-        )
+    post = db.execute(
+        text("""
+        SELECT post_id
+        FROM under_review_posts
+        WHERE status='pending'
+        LIMIT 1
+        """)
+    ).fetchone()
 
-        return {
-            "status": "triggered",
-            "response": response.text
-        }
+    if not post:
+        return {"status": "no pending posts"}
+
+    post_id = post[0]
+
+    result = await process_post(post_id, db)
 
     return {
-        "status": "no pending posts"
+        "status": "triggered",
+        "post_id": post_id,
+        "result": result
     }

@@ -1,16 +1,30 @@
 pipeline {
+
     agent any
 
+    options{
+        disableConcurrentBuilds()
+    }
+
     triggers {
-        cron('H/1 * * * *')
+        cron('H/5 * * * *')
     }
 
     stages {
 
-        stage('Check Pending') {
+        stage('Check Pending Posts') {
+            steps {
+                
+                    sh '''
+                    curl http://10.11.144.100:8000/api/check_pending
+                    '''
+            }
+        }
+
+        stage('Trigger ML Pipeline') {
             steps {
                 sh '''
-                curl http://host.minikube.internal:8000/check_pending
+                curl -X POST http://10.11.144.100:8000/api/retrain_pipeline
                 '''
             }
         }
