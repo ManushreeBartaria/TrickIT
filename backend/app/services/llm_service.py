@@ -1,12 +1,25 @@
 import os
 from dotenv import load_dotenv
-import google.generativeai as genai
+
+try:
+    from google import genai
+except ImportError:
+    try:
+        import google.generativeai as genai
+    except ImportError:
+        try:
+            import generativeai as genai
+        except ImportError:
+            genai = None
 
 load_dotenv()
 
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-model = genai.GenerativeModel("gemini-3-flash-preview")  
+client = None
+if genai is not None:
+    try:
+        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    except Exception:
+        client = None
 
 
 def llm_check(content: str) -> str:
@@ -43,8 +56,14 @@ Rules:
 - Do NOT explain your answer
 """
 
+    if client is None:
+        return "non_educational"
+
     try:
-        response = model.generate_content(prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+        )
 
         result = response.text.strip().lower()
 

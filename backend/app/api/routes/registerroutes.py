@@ -1,10 +1,12 @@
 from asyncio import run
 import stat
-from app.model.registeruser import community_creators
+from app.model.registeruser import community_creators, payments
 from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
 from app.schemas.register import SendMessageRequest, MessageResponse, CreatorResponse
+from app.schemas.register import PaymentInitiateResponse, PaymentVerifyRequest, PaymentStatusResponse
 from app.model.registeruser import chat_messages
 from turtle import back
+from datetime import datetime as dt
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -254,10 +256,6 @@ async def create_post(
             db.add(review_post)
             db.commit()
 
-        # -------------------------------
-        # RETURN RESPONSE (MATCHES SCHEMA)
-        # -------------------------------
-
         return {
             "id": new_post.id,
             "username": user.username,
@@ -291,6 +289,7 @@ async def get_posts(
         for post in all_posts:
             user = db.query(registeruser).filter(registeruser.id == post.user_id).first()
             profile = db.query(userprofile).filter(userprofile.user_id == user.id).first()
+
             already_reported = db.query(post_reports).filter(
                 post_reports.post_id == post.id,
                 post_reports.reporter_user_id == current_user.user_id
@@ -301,11 +300,24 @@ async def get_posts(
                 subscriptions.subscribed_to_user_id == post.user_id
             ).first() is not None
 
-            # Count subscribers for this post author
             subscriber_count = db.query(subscriptions).filter(
                 subscriptions.subscribed_to_user_id == post.user_id
             ).count()
-            
+
+            # Author is a creator if their profile status is "yes"
+            author_is_creator = profile is not None and profile.status == "yes"
+
+            # Subscribe button shows on any creator's post EXCEPT your own
+            is_own_post = post.user_id == current_user.user_id
+            can_subscribe = author_is_creator and not is_own_post
+
+            # Check if current viewer has completed payment
+            viewer_payment = db.query(payments).filter(
+                payments.user_id == current_user.user_id,
+                payments.status == "completed"
+            ).first()
+            viewer_has_paid = viewer_payment is not None
+
             posts_data.append({
                 "id": post.id,
                 "username": user.username,
@@ -313,10 +325,14 @@ async def get_posts(
                 "about": profile.about if profile else "",
                 "content": post.content,
                 "media_url": post.media_url,
-                "report_count": post.report_count,   # NEW
-                "is_reported": already_reported,      # NEW
-                "is_subscribed": already_subscribed,  # NEW
-                "subscriber_count": subscriber_count,  # NEW
+                "report_count": post.report_count,
+                "is_reported": already_reported,
+                "is_subscribed": already_subscribed,
+                "subscriber_count": subscriber_count,
+                "can_subscribe": can_subscribe,
+                "is_community_creator": author_is_creator,
+                "is_own_post": is_own_post,
+                "viewer_has_paid": viewer_has_paid,
             })
 
         return posts_data
@@ -324,7 +340,6 @@ async def get_posts(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# NEW ENDPOINT
 @router.post("/posts/{post_id}/report", response_model=reportResponse)
 async def report_post(
     post_id: int,
@@ -336,7 +351,6 @@ async def report_post(
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
-        # Prevent duplicate reports from same user
         existing_report = db.query(post_reports).filter(
             post_reports.post_id == post_id,
             post_reports.reporter_user_id == current_user.user_id
@@ -345,18 +359,15 @@ async def report_post(
         if existing_report:
             raise HTTPException(status_code=400, detail="You have already reported this post")
 
-        # Record the report
         new_report = post_reports(
             post_id=post_id,
             reporter_user_id=current_user.user_id
         )
         db.add(new_report)
 
-        # Increment count
         post.report_count = (post.report_count or 0) + 1
         db.commit()
 
-        # Auto-delete post and media file when report count hits 3
         if post.report_count >= 3:
             if post.media_url:
                 media_filename = post.media_url.split("/uploads/")[-1]
@@ -377,7 +388,6 @@ async def report_post(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# NEW ENDPOINT
 @router.post("/posts/{post_id}/subscribe", response_model=subscribeResponse)
 async def toggle_subscribe(
     post_id: int,
@@ -393,18 +403,29 @@ async def toggle_subscribe(
         if post.user_id == current_user.user_id:
             raise HTTPException(status_code=400, detail="You cannot subscribe to your own posts")
 
+        # Check the post author is actually a creator
+        author_profile = db.query(userprofile).filter(userprofile.user_id == post.user_id).first()
+        if not author_profile or author_profile.status != "yes":
+            raise HTTPException(status_code=400, detail="This user is not a community creator")
+
+        # Check viewer has completed payment before subscribing
+        viewer_payment = db.query(payments).filter(
+            payments.user_id == current_user.user_id,
+            payments.status == "completed"
+        ).first()
+        if not viewer_payment:
+            raise HTTPException(status_code=402, detail="Payment required to subscribe")
+
         existing_sub = db.query(subscriptions).filter(
             subscriptions.subscriber_user_id == current_user.user_id,
             subscriptions.subscribed_to_user_id == post.user_id
         ).first()
 
         if existing_sub:
-            # Already subscribed — toggle off
             db.delete(existing_sub)
             db.commit()
             return {"message": "Unsubscribed successfully", "is_subscribed": False}
         else:
-            # Not subscribed — subscribe
             new_sub = subscriptions(
                 subscriber_user_id=current_user.user_id,
                 subscribed_to_user_id=post.user_id
@@ -463,6 +484,7 @@ async def llm_processing(db: Session = Depends(get_db)):
             status_code=500,
             detail=str(e)
         )    
+
 @router.post("/join-community", response_model=JoinCommunityResponse)
 async def join_community(
     data: JoinCommunityRequest,
@@ -480,7 +502,8 @@ async def join_community(
         new_creator = community_creators(
             creator_id=current_user.id,
             name=data.name,
-            upi_id=data.upi_id
+            upi_id=data.upi_id,
+            subscription_fee="0.00"
         )
         db.add(new_creator)
 
@@ -530,14 +553,12 @@ async def get_subscribed_creators(
     AND who are community creators (joined community).
     """
     try:
-        # Get all users this person is subscribed to
         subs = db.query(subscriptions).filter(
             subscriptions.subscriber_user_id == current_user.user_id
         ).all()
 
         creators_list = []
         for sub in subs:
-            # Check if the subscribed-to user is a community creator
             target_profile = db.query(userprofile).filter(
                 userprofile.user_id == sub.subscribed_to_user_id
             ).first()
@@ -564,6 +585,59 @@ async def get_subscribed_creators(
 
 
 # ---------------------------------------------------
+# GET MY SUBSCRIBERS (for creator's "My Subscribers" page)
+# ---------------------------------------------------
+
+@router.get("/community/subscribers", response_model=List[CreatorResponse])
+async def get_my_subscribers(
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns all users who have subscribed to the current creator,
+    along with whether they have sent any unread messages.
+    Only accessible by community creators.
+    """
+    try:
+        subs = db.query(subscriptions).filter(
+            subscriptions.subscribed_to_user_id == current_user.user_id
+        ).all()
+
+        subscribers_list = []
+        for sub in subs:
+            sub_profile = db.query(userprofile).filter(
+                userprofile.user_id == sub.subscriber_user_id
+            ).first()
+
+            sub_user = db.query(registeruser).filter(
+                registeruser.id == sub.subscriber_user_id
+            ).first()
+
+            if not sub_user:
+                continue
+
+            has_message = db.query(chat_messages).filter(
+                chat_messages.sender_user_id == sub.subscriber_user_id,
+                chat_messages.receiver_user_id == current_user.user_id
+            ).first() is not None
+
+            subscribers_list.append({
+                "user_id": sub_user.id,
+                "username": sub_user.username,
+                "about": sub_profile.about if sub_profile else None,
+                "profile_pic": sub_profile.profile_pic if sub_profile else None,
+                "has_message": has_message,
+            })
+
+        return subscribers_list
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------
 # GET CHAT HISTORY
 # ---------------------------------------------------
 
@@ -573,11 +647,6 @@ async def get_chat_history(
     current_user: userprofile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Returns chat history between the current user and other_user_id.
-    Requires that: the other user is a community creator AND
-    the current user is subscribed to them (or vice versa).
-    """
     try:
         other_user = db.query(registeruser).filter(
             registeruser.id == other_user_id
@@ -589,8 +658,6 @@ async def get_chat_history(
             userprofile.user_id == other_user_id
         ).first()
 
-        # Authorization: must be subscribed in at least one direction,
-        # and the other party must be a community creator
         is_subscribed = db.query(subscriptions).filter(
             subscriptions.subscriber_user_id == current_user.user_id,
             subscriptions.subscribed_to_user_id == other_user_id
@@ -604,7 +671,6 @@ async def get_chat_history(
         other_is_creator = other_profile and other_profile.status == "yes"
         current_is_creator = current_user.status == "yes"
 
-        # Allow chat if: subscriber→creator OR creator→subscriber
         allowed = (is_subscribed and other_is_creator) or \
                   (creator_subscribed_to_me and current_is_creator) or \
                   (other_is_creator and current_is_creator)
@@ -615,7 +681,6 @@ async def get_chat_history(
                 detail="You must be subscribed to this creator to chat."
             )
 
-        # Fetch messages between the two users
         messages = db.query(chat_messages).filter(
             (
                 (chat_messages.sender_user_id == current_user.user_id) &
@@ -663,10 +728,6 @@ async def send_message(
     current_user: userprofile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Sends a message from current_user to other_user_id.
-    Same subscription-based access control as GET /chat/{other_user_id}.
-    """
     try:
         if not body.content.strip():
             raise HTTPException(status_code=400, detail="Message cannot be empty")
@@ -729,4 +790,120 @@ async def send_message(
         raise
     except Exception as e:
         db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ---------------------------------------------------
+# PAYMENT ENDPOINTS
+# ---------------------------------------------------
+
+PLATFORM_UPI_ID = "trickit@upi"
+PAYMENT_AMOUNT = "99.00"
+
+@router.post("/payment/initiate", response_model=PaymentInitiateResponse)
+async def initiate_payment(
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        existing = db.query(payments).filter(
+            payments.user_id == current_user.user_id
+        ).first()
+
+        if existing and existing.status == "completed":
+            return {
+                "payment_id": existing.id,
+                "amount": existing.amount,
+                "upi_id": PLATFORM_UPI_ID,
+                "message": "Payment already completed",
+                "status": "completed",
+            }
+
+        if existing:
+            return {
+                "payment_id": existing.id,
+                "amount": existing.amount,
+                "upi_id": PLATFORM_UPI_ID,
+                "message": "Payment pending. Enter your UPI transaction reference to verify.",
+                "status": "pending",
+            }
+
+        new_payment = payments(
+            user_id=current_user.user_id,
+            amount=PAYMENT_AMOUNT,
+            status="pending",
+        )
+        db.add(new_payment)
+        db.commit()
+        db.refresh(new_payment)
+
+        return {
+            "payment_id": new_payment.id,
+            "amount": new_payment.amount,
+            "upi_id": PLATFORM_UPI_ID,
+            "message": f"Pay ₹{PAYMENT_AMOUNT} to {PLATFORM_UPI_ID} and enter your UPI reference below.",
+            "status": "pending",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/payment/verify", response_model=PaymentStatusResponse)
+async def verify_payment(
+    body: PaymentVerifyRequest,
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        payment = db.query(payments).filter(
+            payments.id == body.payment_id,
+            payments.user_id == current_user.user_id
+        ).first()
+
+        if not payment:
+            raise HTTPException(status_code=404, detail="Payment record not found")
+
+        if payment.status == "completed":
+            return {"has_paid": True, "status": "completed", "payment_id": payment.id}
+
+        if not body.upi_ref or not body.upi_ref.strip():
+            raise HTTPException(status_code=400, detail="UPI transaction reference is required")
+
+        payment.upi_ref = body.upi_ref.strip()
+        payment.status = "completed"
+        payment.completed_at = dt.utcnow()
+        db.commit()
+
+        return {"has_paid": True, "status": "completed", "payment_id": payment.id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/payment/status", response_model=PaymentStatusResponse)
+async def payment_status(
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        payment = db.query(payments).filter(
+            payments.user_id == current_user.user_id
+        ).first()
+
+        if not payment:
+            return {"has_paid": False, "status": "not_initiated", "payment_id": None}
+
+        return {
+            "has_paid": payment.status == "completed",
+            "status": payment.status,
+            "payment_id": payment.id,
+        }
+
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

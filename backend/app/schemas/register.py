@@ -87,6 +87,11 @@ class postsResponse(BaseModel):
     report_count: Optional[int] = 0
     is_subscribed: Optional[bool] = False
     is_reported: Optional[bool] = False
+    subscriber_count: Optional[int] = 0
+    can_subscribe: Optional[bool] = False        # True if post author is a creator and not own post
+    is_community_creator: Optional[bool] = False # True if the post author has joined community
+    is_own_post: Optional[bool] = False          # True if the viewer is the post author
+    viewer_has_paid: Optional[bool] = False      # True if current user has completed payment
 
     model_config = {
         "from_attributes": True
@@ -212,5 +217,34 @@ class CreatorResponse(BaseModel):
     username: str
     about: Optional[str] = None
     profile_pic: Optional[str] = None
+    has_message: Optional[bool] = False
+
+    model_config = {"from_attributes": True}
+
+# ------------------------------------------------
+# PAYMENT SCHEMAS
+# ------------------------------------------------
+
+class PaymentInitiateResponse(BaseModel):
+    payment_id: int
+    amount: str
+    upi_id: str          # platform UPI to pay to
+    message: str
+    status: str
+
+    model_config = {"from_attributes": True}
+
+
+class PaymentVerifyRequest(BaseModel):
+    payment_id: int
+    upi_ref: str         # transaction reference entered by the user after paying
+
+    model_config = {"from_attributes": True}
+
+
+class PaymentStatusResponse(BaseModel):
+    has_paid: bool
+    status: str          # "not_initiated" | "pending" | "completed"
+    payment_id: Optional[int] = None
 
     model_config = {"from_attributes": True}

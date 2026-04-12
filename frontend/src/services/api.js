@@ -35,9 +35,14 @@ export const authService = {
     subscribePost: (postId) => api.post(`/api/posts/${postId}/subscribe`),
     joinCommunity: (data) => api.post('/api/join-community', data),   // NEW
     communityStatus: () => api.get('/api/community-status'),          // NEW
-    getSubscribedCreators: () => api.get('/api/community/creators'),  // NEW
-    getChatHistory: (userId) => api.get(`/api/chat/${userId}`),       // NEW
-    sendMessage: (userId, content) => api.post(`/api/chat/${userId}`, { content }), // NEW
+    getSubscribedCreators: () => api.get('/api/community/creators'),
+    getMySubscribers: () => api.get('/api/community/subscribers'),
+    getChatHistory: (userId) => api.get(`/api/chat/${userId}`),
+    sendMessage: (userId, content) => api.post(`/api/chat/${userId}`, { content }),
+    // Payment
+    initiatePayment: () => api.post('/api/payment/initiate'),
+    verifyPayment: (data) => api.post('/api/payment/verify', data),
+    paymentStatus: () => api.get('/api/payment/status'),
 };
 
 api.interceptors.request.use(
