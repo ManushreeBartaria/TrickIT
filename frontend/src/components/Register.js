@@ -4,6 +4,8 @@ import { authService } from '../services/api';
 import { colors } from '../styles/colors';
 import { isValidEmail, isValidPassword, getEmailValidationMessage, getPasswordValidationMessage } from '../utils/validation';
 
+const QR_URL = 'http://localhost:8000/uploads/qr.png';
+
 const styles = {
     container: {
         minHeight: '100vh',
@@ -104,7 +106,50 @@ const styles = {
         backgroundColor: colors.error + '10',
         borderRadius: '6px',
         border: `1px solid ${colors.error}20`,
-    }
+    },
+    // User type toggle
+    toggleRow: {
+        display: 'flex',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        border: `1.5px solid ${colors.primary}`,
+        marginBottom: '1.5rem',
+    },
+    toggleBtn: (active) => ({
+        flex: 1,
+        padding: '0.6rem 0',
+        border: 'none',
+        cursor: 'pointer',
+        fontWeight: '600',
+        fontSize: '14px',
+        backgroundColor: active ? colors.primary : '#fff',
+        color: active ? '#fff' : colors.primary,
+        transition: 'background 0.2s',
+    }),
+    // Payment section
+    paymentBox: {
+        border: '1.5px solid #e0e0e0',
+        borderRadius: '10px',
+        padding: '16px',
+        marginTop: '8px',
+        marginBottom: '12px',
+        backgroundColor: '#f9f9f9',
+        textAlign: 'center',
+    },
+    paymentNote: {
+        fontSize: '13px',
+        color: '#555',
+        marginBottom: '10px',
+        fontWeight: '500',
+    },
+    qrImage: {
+        width: '160px',
+        height: '160px',
+        objectFit: 'contain',
+        border: '1px solid #ddd',
+        borderRadius: '8px',
+        marginBottom: '10px',
+    },
 };
 
 const getPasswordStrength = (password) => {
@@ -137,6 +182,8 @@ const Register = () => {
         password: '',
         confirmPassword: '',
     });
+    const [userType, setUserType] = useState('person');
+    const [transactionId, setTransactionId] = useState('');
     const [error, setError] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -164,9 +211,19 @@ const Register = () => {
             return;
         }
 
+        if (userType === 'company' && !transactionId.trim()) {
+            setError('Please enter the Transaction ID after making the ₹1 payment.');
+            return;
+        }
+
         try {
             const { confirmPassword, ...registrationData } = formData;
-            const response = await authService.register(registrationData);
+            const payload = {
+                ...registrationData,
+                user_type: userType,
+                transaction_id: userType === 'company' ? transactionId.trim() : null,
+            };
+            const response = await authService.register(payload);
             if (response.data.message === "User registered successfully") {
                 navigate('/login');
             }
@@ -190,12 +247,31 @@ const Register = () => {
         <div style={styles.container}>
             <div style={styles.formContainer}>
                 <h1 style={styles.title}>Join TrickIT</h1>
+
+                {/* User type toggle */}
+                <div style={styles.toggleRow}>
+                    <button
+                        type="button"
+                        style={styles.toggleBtn(userType === 'person')}
+                        onClick={() => setUserType('person')}
+                    >
+                        👤 Person
+                    </button>
+                    <button
+                        type="button"
+                        style={styles.toggleBtn(userType === 'company')}
+                        onClick={() => setUserType('company')}
+                    >
+                        🏢 Company / Startup
+                    </button>
+                </div>
+
                 <form onSubmit={handleSubmit}>
                     <input
                         style={styles.input}
                         type="text"
                         name="fullname"
-                        placeholder="Full Name"
+                        placeholder={userType === 'company' ? 'Company / Startup Name' : 'Full Name'}
                         value={formData.fullname}
                         onChange={handleChange}
                         required
@@ -267,6 +343,26 @@ const Register = () => {
                             {showConfirmPassword ? "Hide" : "Show"}
                         </button>
                     </div>
+
+                    {/* Company Payment Section */}
+                    {userType === 'company' && (
+                        <div style={styles.paymentBox}>
+                            <div style={styles.paymentNote}>
+                                🏢 Company registration requires a <strong>₹1 demo payment</strong>.<br />
+                                Scan the QR below & enter your Transaction ID.
+                            </div>
+                            <img src={QR_URL} alt="Payment QR" style={styles.qrImage} />
+                            <input
+                                style={{ ...styles.input, marginTop: '8px', marginBottom: '0' }}
+                                type="text"
+                                placeholder="Enter Transaction ID"
+                                value={transactionId}
+                                onChange={(e) => setTransactionId(e.target.value)}
+                                required={userType === 'company'}
+                            />
+                        </div>
+                    )}
+
                     {error && <div style={styles.error}>{error}</div>}
                     <button type="submit" style={styles.button}>
                         Join Now

@@ -1,6 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { authService, getImageUrl } from '../services/api';
+import React, { useState, useEffect } from 'react';
+import { authService, getImageUrl, API_BASE_URL } from '../services/api';
 import { useNavigate } from 'react-router-dom';
+
+const QR_URL = `${API_BASE_URL}/uploads/qr.png`;
 
 const styles = {
     container: {
@@ -92,6 +96,7 @@ const styles = {
         border: '1px solid #e0e0e0',
         borderRadius: '4px',
         marginBottom: '10px',
+        boxSizing: 'border-box',
     },
     post: {
         backgroundColor: '#fff',
@@ -193,6 +198,8 @@ const styles = {
         maxWidth: '420px',
         width: '90%',
         boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+        maxHeight: '90vh',
+        overflowY: 'auto',
     },
     modalHeader: {
         fontSize: '20px',
@@ -203,7 +210,7 @@ const styles = {
     modalBody: {
         fontSize: '15px',
         color: '#666',
-        marginBottom: '20px',
+        marginBottom: '16px',
         lineHeight: '1.5',
     },
     modalActions: {
@@ -269,7 +276,60 @@ const styles = {
         marginBottom: '4px',
         display: 'block',
     },
+    // Payment box inside modals
+    paymentSection: {
+        border: '1.5px solid #e0e0e0',
+        borderRadius: '10px',
+        padding: '14px',
+        backgroundColor: '#fafafa',
+        textAlign: 'center',
+        marginBottom: '14px',
+    },
+    paymentNote: {
+        fontSize: '13px',
+        color: '#555',
+        marginBottom: '10px',
+        fontWeight: '500',
+    },
+    qrImage: {
+        width: '150px',
+        height: '150px',
+        objectFit: 'contain',
+        border: '1px solid #ddd',
+        borderRadius: '8px',
+        marginBottom: '10px',
+        display: 'block',
+        margin: '0 auto 10px',
+    },
+    boostBtn: {
+        backgroundColor: '#ff6600',
+        color: '#fff',
+        border: 'none',
+        padding: '8px 16px',
+        borderRadius: '16px',
+        cursor: 'pointer',
+        fontSize: '13px',
+        fontWeight: '600',
+        marginLeft: '8px',
+    },
 };
+
+// Reusable QR Payment Block for modals
+const QrPaymentBlock = ({ transactionId, onTransactionIdChange }) => (
+    <div style={styles.paymentSection}>
+        <div style={styles.paymentNote}>
+            💳 Pay <strong>₹1</strong> (demo) by scanning the QR below
+        </div>
+        <img src={QR_URL} alt="Payment QR Code" style={styles.qrImage} />
+        <input
+            style={{ ...styles.formInput, marginBottom: 0 }}
+            type="text"
+            placeholder="Enter Transaction ID after payment"
+            value={transactionId}
+            onChange={(e) => onTransactionIdChange(e.target.value)}
+        />
+    </div>
+);
 
 const Dashboard = () => {
     const [profile, setProfile] = useState(null);
@@ -281,7 +341,7 @@ const Dashboard = () => {
     // Community state
     const [showCommunityModal, setShowCommunityModal] = useState(false);
     const [communityStatus, setCommunityStatus] = useState('no');
-    const [communityForm, setCommunityForm] = useState({ name: '', upi_id: '' });
+    const [communityForm, setCommunityForm] = useState({ name: '', upi_id: '', transaction_id: '' });
     const [communityLoading, setCommunityLoading] = useState(false);
     const [communityError, setCommunityError] = useState('');
 
@@ -300,6 +360,20 @@ const Dashboard = () => {
     // useEffect doesn't fire an extra loadPosts on first render.
     const isFirstRender = useRef(true);
 
+    // Subscribe payment modal
+    const [showSubscribeModal, setShowSubscribeModal] = useState(false);
+    const [subscribePostId, setSubscribePostId] = useState(null);
+    const [subscribeTxnId, setSubscribeTxnId] = useState('');
+    const [subscribeLoading, setSubscribeLoading] = useState(false);
+
+    // Boost post modal (company only)
+    const [showBoostModal, setShowBoostModal] = useState(false);
+    const [boostPostId, setBoostPostId] = useState(null);
+    const [boostTxnId, setBoostTxnId] = useState('');
+    const [lastCreatedPostId, setLastCreatedPostId] = useState(null);
+    const [boostLoading, setBoostLoading] = useState(false);
+
+    const isCompany = localStorage.getItem('user_type') === 'company';
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -358,7 +432,9 @@ const Dashboard = () => {
             const formData = new FormData();
             formData.append('content', newPost.content);
             if (newPost.mediaFile) formData.append('media', newPost.mediaFile);
-            await authService.uploadPost(formData);
+            const res = await authService.uploadPost(formData);
+            // Track last post ID so company can optionally boost it
+            if (res.data?.id) setLastCreatedPostId(res.data.id);
             setNewPost({ content: '', mediaFile: null });
             loadPosts();
         } catch (error) {
@@ -369,6 +445,7 @@ const Dashboard = () => {
 
     const handleLogout = () => {
         localStorage.removeItem('token');
+        localStorage.removeItem('user_type');
         navigate('/login');
     };
 
@@ -481,6 +558,52 @@ const Dashboard = () => {
     const handleJoinCommunityClick = () => {
         if (communityStatus === 'yes') return;
         setCommunityForm({ name: '', upi_id: '' });
+    // --- Subscribe: open payment modal ---
+    const handleSubscribeClick = (postId) => {
+        setSubscribePostId(postId);
+        setSubscribeTxnId('');
+        setShowSubscribeModal(true);
+    };
+
+    const confirmSubscribe = async () => {
+        if (!subscribeTxnId.trim()) {
+            alert('Please enter the Transaction ID after making the ₹1 payment.');
+            return;
+        }
+        setSubscribeLoading(true);
+        try {
+            // First verify payment with Macrodroid
+            await authService.verifyPayment({
+                transaction_id: subscribeTxnId.trim(),
+                source_type: 'subscribe',
+                source_id: subscribePostId,
+            });
+            // Then subscribe
+            const response = await authService.subscribePost(subscribePostId);
+            const { is_subscribed } = response.data;
+            setPosts(prev => {
+                const updated = prev.map(p =>
+                    p.id === subscribePostId ? { ...p, is_subscribed } : p
+                );
+                setHasSubscriptions(updated.some(p => p.is_subscribed));
+                return updated;
+            });
+            setShowSubscribeModal(false);
+        } catch (error) {
+            alert(error.response?.data?.detail || 'Subscription failed. Please try again.');
+        } finally {
+            setSubscribeLoading(false);
+        }
+    };
+
+    // --- Join Community ---
+    const handleJoinCommunityClick = () => {
+        if (communityStatus === 'yes') return;
+        if (!hasSubscriptions) {
+            alert('You must subscribe to at least one creator before joining the community.');
+            return;
+        }
+        setCommunityForm({ name: '', upi_id: '', transaction_id: '' });
         setCommunityError('');
         setShowCommunityModal(true);
     };
@@ -491,12 +614,17 @@ const Dashboard = () => {
             setCommunityError('Please fill in all fields.');
             return;
         }
+        if (!communityForm.transaction_id.trim()) {
+            setCommunityError('Please enter the Transaction ID after making the ₹1 payment.');
+            return;
+        }
         setCommunityLoading(true);
         setCommunityError('');
         try {
             const response = await authService.joinCommunity({
                 name: communityForm.name.trim(),
                 upi_id: communityForm.upi_id.trim(),
+                transaction_id: communityForm.transaction_id.trim(),
             });
 
             // Close modal first so the UI feels snappy
@@ -551,6 +679,39 @@ const Dashboard = () => {
 
     // ─── Render ───────────────────────────────────────────────────────────────
 
+    // --- Boost Post (company only) ---
+    const handleBoostClick = (postId = lastCreatedPostId) => {
+        if (!postId) {
+            alert('Please create a post first before boosting.');
+            return;
+        }
+        setBoostPostId(postId);
+        setBoostTxnId('');
+        setShowBoostModal(true);
+    };
+
+    const confirmBoost = async () => {
+        if (!boostTxnId.trim()) {
+            alert('Please enter the Transaction ID after making the ₹1 payment.');
+            return;
+        }
+        setBoostLoading(true);
+        try {
+            const response = await authService.boostPost({
+                post_id: boostPostId,
+                transaction_id: boostTxnId.trim(),
+            });
+            alert(response.data.message || 'Post boosted successfully!');
+            setShowBoostModal(false);
+            setLastCreatedPostId(null);
+            loadPosts();
+        } catch (error) {
+            alert(error.response?.data?.detail || 'Boost failed. Please try again.');
+        } finally {
+            setBoostLoading(false);
+        }
+    };
+
     return (
         <div style={styles.container}>
             {/* Sidebar */}
@@ -566,6 +727,11 @@ const Dashboard = () => {
                         )}
                     </div>
                     <div style={styles.userName}>{profile?.username}</div>
+                    {isCompany && (
+                        <div style={{ fontSize: '11px', color: '#0a66c2', fontWeight: '600', marginBottom: '4px' }}>
+                            🏢 Company / Startup
+                        </div>
+                    )}
                     <div style={styles.about}>{profile?.about || 'No bio added yet'}</div>
 
                     {/* Edit Profile */}
@@ -629,7 +795,24 @@ const Dashboard = () => {
                             onChange={(e) => setNewPost({ ...newPost, mediaFile: e.target.files[0] })}
                             accept="image/*,video/*"
                         />
-                        <button type="submit" style={styles.button}>Post</button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                            <button type="submit" style={styles.button}>Post</button>
+                            {/* Boost Post button — company only, shown after a post is created */}
+                            {isCompany && (
+                                <button
+                                    type="button"
+                                    style={{
+                                        ...styles.boostBtn,
+                                        opacity: lastCreatedPostId ? 1 : 0.45,
+                                        cursor: lastCreatedPostId ? 'pointer' : 'not-allowed',
+                                    }}
+                                    onClick={() => handleBoostClick()}
+                                    title={lastCreatedPostId ? 'Boost your last post' : 'Post something first to boost it'}
+                                >
+                                    🚀 Boost Post
+                                </button>
+                            )}
+                        </div>
                     </form>
                 </div>
 
@@ -714,6 +897,35 @@ const Dashboard = () => {
             )}
 
             {/* ── Join Community Modal ──────────────────────────────────────── */}
+            {/* Subscribe Payment Modal */}
+            {showSubscribeModal && (
+                <div style={styles.modalOverlay} onClick={() => setShowSubscribeModal(false)}>
+                    <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+                        <div style={styles.modalHeader}>💳 Subscribe to Creator</div>
+                        <div style={styles.modalBody}>
+                            A one-time <strong>₹1 demo payment</strong> is required to subscribe.
+                        </div>
+                        <QrPaymentBlock
+                            transactionId={subscribeTxnId}
+                            onTransactionIdChange={setSubscribeTxnId}
+                        />
+                        <div style={styles.modalActions}>
+                            <button style={styles.cancelBtn} onClick={() => setShowSubscribeModal(false)}>
+                                Cancel
+                            </button>
+                            <button
+                                style={{ ...styles.submitBtn, opacity: subscribeLoading ? 0.7 : 1 }}
+                                disabled={subscribeLoading}
+                                onClick={confirmSubscribe}
+                            >
+                                {subscribeLoading ? 'Processing...' : 'Subscribe'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Join Community Modal */}
             {showCommunityModal && (
                 <div style={styles.modalOverlay} onClick={() => setShowCommunityModal(false)}>
                     <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
@@ -737,6 +949,11 @@ const Dashboard = () => {
                                 placeholder="e.g. yourname@upi"
                                 value={communityForm.upi_id}
                                 onChange={(e) => setCommunityForm({ ...communityForm, upi_id: e.target.value })}
+                            />
+                            {/* QR Payment block */}
+                            <QrPaymentBlock
+                                transactionId={communityForm.transaction_id}
+                                onTransactionIdChange={(val) => setCommunityForm({ ...communityForm, transaction_id: val })}
                             />
                             {communityError && (
                                 <div style={{ color: '#cc0000', fontSize: '13px', marginBottom: '10px' }}>
@@ -844,6 +1061,31 @@ const Dashboard = () => {
                                 </div>
                             </>
                         )}
+
+            {/* Boost Post Modal (Company Only) */}
+            {showBoostModal && (
+                <div style={styles.modalOverlay} onClick={() => setShowBoostModal(false)}>
+                    <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
+                        <div style={styles.modalHeader}>🚀 Boost Post</div>
+                        <div style={styles.modalBody}>
+                            Boosting a post requires a <strong>₹1 demo payment</strong>. Your post will be highlighted for more visibility.
+                        </div>
+                        <QrPaymentBlock
+                            transactionId={boostTxnId}
+                            onTransactionIdChange={setBoostTxnId}
+                        />
+                        <div style={styles.modalActions}>
+                            <button style={styles.cancelBtn} onClick={() => setShowBoostModal(false)}>
+                                Cancel
+                            </button>
+                            <button
+                                style={{ ...styles.boostBtn, padding: '10px 20px', marginLeft: 0, opacity: boostLoading ? 0.7 : 1 }}
+                                disabled={boostLoading}
+                                onClick={confirmBoost}
+                            >
+                                {boostLoading ? 'Boosting...' : '🚀 Confirm Boost'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

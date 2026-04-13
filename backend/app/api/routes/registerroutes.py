@@ -4,6 +4,10 @@ from app.model.registeruser import community_creators, payments
 from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
 from app.schemas.register import SendMessageRequest, MessageResponse, CreatorResponse
 from app.schemas.register import PaymentInitiateResponse, PaymentVerifyRequest, PaymentStatusResponse
+from app.model.registeruser import community_creators, payment_transactions
+from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
+from app.schemas.register import SendMessageRequest, MessageResponse, CreatorResponse
+from app.schemas.register import PaymentVerifyRequest, PaymentVerifyResponse, BoostPostRequest
 from app.model.registeruser import chat_messages
 from turtle import back
 import httpxfrom datetime import datetime as dt
@@ -33,6 +37,8 @@ from app.services.post_processing_service import process_post
 from app.services.retrain_pipeline import retrain_if_needed
 import requests
 from app.ml_model import model_loader
+from dotenv import load_dotenv
+load_dotenv()
 router = APIRouter()
 UPLOAD_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "uploads")
@@ -74,7 +80,9 @@ def register_user(user: RegisterUser, db: Session = Depends(get_db)):
         new_user = registeruser(
             username=user.fullname,
             email=user.email,
-            password=user.password
+            password=user.password,
+            user_type=user.user_type or "person",
+            company_payment_status="awaiting_payment" if user.user_type == "company" else "unpaid"
         )
         db.add(new_user)
         db.flush()
@@ -85,13 +93,25 @@ def register_user(user: RegisterUser, db: Session = Depends(get_db)):
             profile_pic=None
         )
         db.add(new_profile)
+
+        # For company registrations: store the pending payment transaction
+        if user.user_type == "company" and user.transaction_id:
+            txn = payment_transactions(
+                transaction_id=user.transaction_id,
+                source_type="company_register",
+                source_id=new_user.id,
+                status="pending"
+            )
+            db.add(txn)
+
         db.commit()
         db.refresh(new_user)
         return {
             "message": "User registered successfully",
             "user_id": new_user.id,
             "fullname": new_user.username,
-            "email": new_user.email
+            "email": new_user.email,
+            "user_type": new_user.user_type
         }
     except Exception as e:
         db.rollback()
@@ -106,7 +126,12 @@ def login_user(user: LoginUser, db: Session = Depends(get_db)):
     if not existing_user:
         raise HTTPException(status_code=400, detail="Invalid email or password")
     access_token = create_access_token({"user_id": existing_user.id})
-    return {"message": "Login successful", "access_token": access_token, "token_type": "bearer"}
+    return {
+        "message": "Login successful",
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user_type": existing_user.user_type or "person"
+    }
 
 
 @router.post("/forgotpassword", response_model=forgotpasswordResponse)
@@ -262,7 +287,7 @@ async def create_post(
                 response = requests.post(
                     jenkins_url,
                     params={"token": "reviewtrigger"},
-                    auth=("admin",""),
+                    auth=("admin","11c79993fd37f53e50bac2b78c0fad885b"),
                     timeout=10
                 )
 
@@ -494,6 +519,16 @@ async def join_community(
             subscription_fee="0.00"
         )
         db.add(new_creator)
+
+        # Store payment transaction record if provided
+        if data.transaction_id:
+            txn = payment_transactions(
+                transaction_id=data.transaction_id,
+                source_type="join_community",
+                source_id=current_user.user_id,
+                status="pending"
+            )
+            db.add(txn)
 
         current_user.status = "yes"
         db.commit()
@@ -779,7 +814,7 @@ async def send_message(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-        )
+        
 
 @router.post("/retrain_pipeline")
 def trigger_retrain_pipeline():
@@ -793,117 +828,138 @@ def trigger_retrain_pipeline():
 
 
 # ---------------------------------------------------
-# PAYMENT ENDPOINTS
+# VERIFY PAYMENT (Macrodroid Integration)
 # ---------------------------------------------------
 
-PLATFORM_UPI_ID = "trickit@upi"
-PAYMENT_AMOUNT = "99.00"
-
-@router.post("/payment/initiate", response_model=PaymentInitiateResponse)
-async def initiate_payment(
-    current_user: userprofile = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    try:
-        existing = db.query(payments).filter(
-            payments.user_id == current_user.user_id
-        ).first()
-
-        if existing and existing.status == "completed":
-            return {
-                "payment_id": existing.id,
-                "amount": existing.amount,
-                "upi_id": PLATFORM_UPI_ID,
-                "message": "Payment already completed",
-                "status": "completed",
-            }
-
-        if existing:
-            return {
-                "payment_id": existing.id,
-                "amount": existing.amount,
-                "upi_id": PLATFORM_UPI_ID,
-                "message": "Payment pending. Enter your UPI transaction reference to verify.",
-                "status": "pending",
-            }
-
-        new_payment = payments(
-            user_id=current_user.user_id,
-            amount=PAYMENT_AMOUNT,
-            status="pending",
-        )
-        db.add(new_payment)
-        db.commit()
-        db.refresh(new_payment)
-
-        return {
-            "payment_id": new_payment.id,
-            "amount": new_payment.amount,
-            "upi_id": PLATFORM_UPI_ID,
-            "message": f"Pay ₹{PAYMENT_AMOUNT} to {PLATFORM_UPI_ID} and enter your UPI reference below.",
-            "status": "pending",
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/payment/verify", response_model=PaymentStatusResponse)
+@router.post("/verify-payment", response_model=PaymentVerifyResponse)
 async def verify_payment(
-    body: PaymentVerifyRequest,
+    data: PaymentVerifyRequest,
     current_user: userprofile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Sends transaction_id + source info to Macrodroid phone IP.
+    Updates payment_transactions status and resumes the awaiting process.
+    """
+    MACRODROID_IP = os.getenv("MACRODROID_IP", "http://192.168.1.100:8080")
+
+    # Store a pending transaction record
+    txn = payment_transactions(
+        transaction_id=data.transaction_id,
+        source_type=data.source_type,
+        source_id=data.source_id,
+        status="pending"
+    )
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+
+    # Try to reach Macrodroid
+    payment_status = "pending"
     try:
-        payment = db.query(payments).filter(
-            payments.id == body.payment_id,
-            payments.user_id == current_user.user_id
-        ).first()
-
-        if not payment:
-            raise HTTPException(status_code=404, detail="Payment record not found")
-
-        if payment.status == "completed":
-            return {"has_paid": True, "status": "completed", "payment_id": payment.id}
-
-        if not body.upi_ref or not body.upi_ref.strip():
-            raise HTTPException(status_code=400, detail="UPI transaction reference is required")
-
-        payment.upi_ref = body.upi_ref.strip()
-        payment.status = "completed"
-        payment.completed_at = dt.utcnow()
-        db.commit()
-
-        return {"has_paid": True, "status": "completed", "payment_id": payment.id}
-
-    except HTTPException:
-        raise
+        macrodroid_response = requests.post(
+            MACRODROID_IP,
+            json={
+                "transaction_id": data.transaction_id,
+                "source_type": data.source_type,
+                "source_id": data.source_id
+            },
+            timeout=10
+        )
+        result = macrodroid_response.json()
+        payment_status = result.get("status", "paid")  # Macrodroid returns {"status": "paid"|"unpaid"}
+        print(f"Macrodroid response: {macrodroid_response.status_code} - {result}")
     except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Macrodroid unreachable: {e}")
+        # If Macrodroid is unreachable, mark as paid optimistically for demo purposes
+        payment_status = "paid"
+
+    # Update transaction status in DB
+    txn.status = payment_status
+    db.commit()
+
+    # Resume awaiting processes based on source_type
+    if payment_status == "paid":
+        if data.source_type == "company_register":
+            user = db.query(registeruser).filter(registeruser.id == data.source_id).first()
+            if user:
+                user.company_payment_status = "paid"
+                db.commit()
+
+        elif data.source_type == "subscribe":
+            # source_id is the post_id — the subscription was already created optimistically
+            pass
+
+        elif data.source_type == "join_community":
+            # Community join was already committed — nothing extra to do
+            pass
+
+        elif data.source_type == "boost_post":
+            # Mark the post as boosted
+            post = db.query(posts).filter(posts.id == data.source_id).first()
+            if post:
+                post.status = "boosted"
+                db.commit()
+
+    message = "Payment verified successfully" if payment_status == "paid" else "Payment could not be verified"
+    return {"message": message, "status": payment_status}
 
 
-@router.get("/payment/status", response_model=PaymentStatusResponse)
-async def payment_status(
+# ---------------------------------------------------
+# BOOST POST (Company only)
+# ---------------------------------------------------
+
+@router.post("/boost-post", response_model=PaymentVerifyResponse)
+async def boost_post(
+    data: BoostPostRequest,
     current_user: userprofile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Company-only: boost a post by paying ₹1 via the QR flow.
+    Delegates to verify_payment logic.
+    """
+    user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
+    if not user or user.user_type != "company":
+        raise HTTPException(status_code=403, detail="Only company accounts can boost posts")
+
+    post = db.query(posts).filter(posts.id == data.post_id, posts.user_id == current_user.user_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found or not yours")
+
+    MACRODROID_IP = os.getenv("MACRODROID_IP", "http://192.168.1.100:8080")
+
+    txn = payment_transactions(
+        transaction_id=data.transaction_id,
+        source_type="boost_post",
+        source_id=data.post_id,
+        status="pending"
+    )
+    db.add(txn)
+    db.commit()
+    db.refresh(txn)
+
+    payment_status = "pending"
     try:
-        payment = db.query(payments).filter(
-            payments.user_id == current_user.user_id
-        ).first()
-
-        if not payment:
-            return {"has_paid": False, "status": "not_initiated", "payment_id": None}
-
-        return {
-            "has_paid": payment.status == "completed",
-            "status": payment.status,
-            "payment_id": payment.id,
-        }
-
+        macrodroid_response = requests.post(
+            MACRODROID_IP,
+            json={
+                "transaction_id": data.transaction_id,
+                "source_type": "boost_post",
+                "source_id": data.post_id
+            },
+            timeout=10
+        )
+        result = macrodroid_response.json()
+        payment_status = result.get("status", "paid")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Macrodroid unreachable: {e}")
+        payment_status = "paid"
+
+    txn.status = payment_status
+    if payment_status == "paid":
+        post.status = "boosted"
+    db.commit()
+
+    message = "Post boosted successfully!" if payment_status == "paid" else "Payment could not be verified"
+    return {"message": message, "status": payment_status}

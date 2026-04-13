@@ -10,6 +10,8 @@ class registeruser(Base):
     username = Column(String(100), nullable=False)
     email = Column(String(100), nullable=False)
     password = Column(String(100), nullable=False)
+    user_type = Column(String(20), default="person", nullable=False)  # person / company
+    company_payment_status = Column(String(20), default="unpaid", nullable=True)  # unpaid / awaiting_payment / paid
     
     otps = relationship("forgotpasswordOTP", back_populates="user", cascade="all, delete-orphan")
     user_profile = relationship("userprofile", back_populates="user", cascade="all, delete-orphan")
@@ -155,3 +157,18 @@ class chat_messages(Base):
 
     sender = relationship("registeruser", foreign_keys=[sender_user_id])
     receiver = relationship("registeruser", foreign_keys=[receiver_user_id])
+
+
+# ---------------------------------------------------
+# PAYMENT TRANSACTIONS
+# ---------------------------------------------------
+
+class payment_transactions(Base):
+    __tablename__ = "payment_transactions"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    transaction_id = Column(String(100), nullable=False)
+    source_type = Column(String(50), nullable=False)  # company_register / join_community / subscribe / boost_post
+    source_id = Column(Integer, nullable=True)         # user_id or post_id depending on source_type
+    status = Column(String(20), default="pending", nullable=False)  # pending / paid / unpaid
+    created_at = Column(DateTime, default=datetime.utcnow)
