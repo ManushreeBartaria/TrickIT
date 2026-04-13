@@ -1,26 +1,23 @@
 from asyncio import run
 import stat
-from app.model.registeruser import community_creators, payments
-from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
-from app.schemas.register import SendMessageRequest, MessageResponse, CreatorResponse
-from app.schemas.register import PaymentInitiateResponse, PaymentVerifyRequest, PaymentStatusResponse
-from app.model.registeruser import community_creators, payment_transactions
+from datetime import datetime as dt
+
+from app.model.registeruser import community_creators, payment_transactions, payments
 from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
 from app.schemas.register import SendMessageRequest, MessageResponse, CreatorResponse
 from app.schemas.register import PaymentVerifyRequest, PaymentVerifyResponse, BoostPostRequest
 from app.model.registeruser import chat_messages
 from turtle import back
-import httpxfrom datetime import datetime as dt
-
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database.connections import get_db
 from fastapi import File, UploadFile, Form
-from app.model.registeruser import registeruser, forgotpasswordOTP,approved_posts,rejected_posts
-from app.model.registeruser import posts, userprofile, post_reports, subscriptions, under_review_posts  
-from app.schemas.register import RegisterUser, RegisterResponse, LoginResponse, LoginUser,ApprovedPostResponse,RejectedPostResponse
+from app.model.registeruser import registeruser, forgotpasswordOTP, approved_posts, rejected_posts
+from app.model.registeruser import posts, userprofile, post_reports, subscriptions, under_review_posts
+from app.schemas.register import RegisterUser, RegisterResponse, LoginResponse, LoginUser, ApprovedPostResponse, RejectedPostResponse
 from app.schemas.register import forgotpassword, resetpassword, forgotpasswordResponse, resetpasswordResponse, userprofileResponse
-from app.schemas.register import postsResponse, reportResponse, subscribeResponse, UnderReviewPost,UnderReviewResponse
+from app.schemas.register import postsResponse, reportResponse, subscribeResponse, UnderReviewPost, UnderReviewResponse
 from typing import List
 import random as rnd
 from fastapi.security import OAuth2PasswordBearer
@@ -39,6 +36,7 @@ import requests
 from app.ml_model import model_loader
 from dotenv import load_dotenv
 load_dotenv()
+
 router = APIRouter()
 UPLOAD_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "uploads")
@@ -47,10 +45,10 @@ BASE_DIR = os.path.dirname(__file__)
 MODEL_DIR = os.path.join(BASE_DIR, "..", "..", "ml_model")
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 SECRET_KEY = "hackathon-secret-key"
 ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
@@ -219,6 +217,7 @@ async def update_profile(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/posts", response_model=postsResponse)
 async def create_post(
     content: str = Form(...),
@@ -237,8 +236,7 @@ async def create_post(
         print("Raw probabilities:", probs)
         edu_index = classes.index('educational')
         educational_prob = probs[0][edu_index]
-        
-    
+
         print("Educational probability:", educational_prob)
 
         new_post = posts(
@@ -287,7 +285,7 @@ async def create_post(
                 response = requests.post(
                     jenkins_url,
                     params={"token": "reviewtrigger"},
-                    auth=("admin","11c79993fd37f53e50bac2b78c0fad885b"),
+                    auth=("admin",""),
                     timeout=10
                 )
 
@@ -295,7 +293,7 @@ async def create_post(
 
             except Exception as e:
                 print("Jenkins trigger failed:", e)
-        
+
         return {
             "id": new_post.id,
             "username": user.username,
@@ -317,7 +315,6 @@ async def create_post(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-
 @router.get("/posts", response_model=List[postsResponse])
 async def get_posts(
     current_user: userprofile = Depends(get_current_user),
@@ -325,8 +322,8 @@ async def get_posts(
 ):
     try:
         all_posts = db.query(posts).filter(
-        posts.status.in_(["approved", "pending"])
-         ).order_by(posts.id.desc()).all()
+            posts.status.in_(["approved", "pending"])
+        ).order_by(posts.id.desc()).all()
 
         posts_data = []
         for post in all_posts:
@@ -354,13 +351,6 @@ async def get_posts(
             is_own_post = post.user_id == current_user.user_id
             can_subscribe = author_is_creator and not is_own_post
 
-            # Check if current viewer has completed payment
-            viewer_payment = db.query(payments).filter(
-                payments.user_id == current_user.user_id,
-                payments.status == "completed"
-            ).first()
-            viewer_has_paid = viewer_payment is not None
-
             posts_data.append({
                 "id": post.id,
                 "username": user.username,
@@ -375,7 +365,7 @@ async def get_posts(
                 "can_subscribe": can_subscribe,
                 "is_community_creator": author_is_creator,
                 "is_own_post": is_own_post,
-                "viewer_has_paid": viewer_has_paid,
+                "viewer_has_paid": False,
             })
 
         return posts_data
@@ -451,14 +441,6 @@ async def toggle_subscribe(
         if not author_profile or author_profile.status != "yes":
             raise HTTPException(status_code=400, detail="This user is not a community creator")
 
-        # Check viewer has completed payment before subscribing
-        viewer_payment = db.query(payments).filter(
-            payments.user_id == current_user.user_id,
-            payments.status == "completed"
-        ).first()
-        if not viewer_payment:
-            raise HTTPException(status_code=402, detail="Payment required to subscribe")
-
         existing_sub = db.query(subscriptions).filter(
             subscriptions.subscriber_user_id == current_user.user_id,
             subscriptions.subscribed_to_user_id == post.user_id
@@ -483,20 +465,15 @@ async def toggle_subscribe(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @router.post("/llm-processing/{post_id}")
 async def llm_processing(post_id: int, db: Session = Depends(get_db)):
-
     try:
         result = await process_post(post_id, db)
         return result
-
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )
-        
-        
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/join-community", response_model=JoinCommunityResponse)
 async def join_community(
@@ -520,7 +497,7 @@ async def join_community(
         )
         db.add(new_creator)
 
-        # Store payment transaction record if provided
+        # Store payment transaction record
         if data.transaction_id:
             txn = payment_transactions(
                 transaction_id=data.transaction_id,
@@ -546,20 +523,15 @@ async def community_status(
     db: Session = Depends(get_db)
 ):
     return {"message": "Status fetched", "status": current_user.status or "no"}
-        
+
 
 @router.get("/check_pending")
 async def check_pending(db: Session = Depends(get_db)):
     try:
         result = await check_and_trigger(db)
         return result
-
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=str(e)
-        )      
-
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ---------------------------------------------------
@@ -571,10 +543,6 @@ async def get_subscribed_creators(
     current_user: userprofile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Returns all users that the current user is subscribed to
-    AND who are community creators (joined community).
-    """
     try:
         subs = db.query(subscriptions).filter(
             subscriptions.subscriber_user_id == current_user.user_id
@@ -608,7 +576,7 @@ async def get_subscribed_creators(
 
 
 # ---------------------------------------------------
-# GET MY SUBSCRIBERS (for creator's "My Subscribers" page)
+# GET MY SUBSCRIBERS
 # ---------------------------------------------------
 
 @router.get("/community/subscribers", response_model=List[CreatorResponse])
@@ -616,11 +584,6 @@ async def get_my_subscribers(
     current_user: userprofile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Returns all users who have subscribed to the current creator,
-    along with whether they have sent any unread messages.
-    Only accessible by community creators.
-    """
     try:
         subs = db.query(subscriptions).filter(
             subscriptions.subscribed_to_user_id == current_user.user_id
@@ -661,7 +624,7 @@ async def get_my_subscribers(
 
 
 # ---------------------------------------------------
-# GET CHAT HISTORY
+# CHAT
 # ---------------------------------------------------
 
 @router.get("/chat/{other_user_id}")
@@ -671,15 +634,11 @@ async def get_chat_history(
     db: Session = Depends(get_db)
 ):
     try:
-        other_user = db.query(registeruser).filter(
-            registeruser.id == other_user_id
-        ).first()
+        other_user = db.query(registeruser).filter(registeruser.id == other_user_id).first()
         if not other_user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        other_profile = db.query(userprofile).filter(
-            userprofile.user_id == other_user_id
-        ).first()
+        other_profile = db.query(userprofile).filter(userprofile.user_id == other_user_id).first()
 
         is_subscribed = db.query(subscriptions).filter(
             subscriptions.subscriber_user_id == current_user.user_id,
@@ -699,10 +658,7 @@ async def get_chat_history(
                   (other_is_creator and current_is_creator)
 
         if not allowed:
-            raise HTTPException(
-                status_code=403,
-                detail="You must be subscribed to this creator to chat."
-            )
+            raise HTTPException(status_code=403, detail="You must be subscribed to this creator to chat.")
 
         messages = db.query(chat_messages).filter(
             (
@@ -740,10 +696,6 @@ async def get_chat_history(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ---------------------------------------------------
-# SEND MESSAGE
-# ---------------------------------------------------
-
 @router.post("/chat/{other_user_id}")
 async def send_message(
     other_user_id: int,
@@ -755,15 +707,11 @@ async def send_message(
         if not body.content.strip():
             raise HTTPException(status_code=400, detail="Message cannot be empty")
 
-        other_user = db.query(registeruser).filter(
-            registeruser.id == other_user_id
-        ).first()
+        other_user = db.query(registeruser).filter(registeruser.id == other_user_id).first()
         if not other_user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        other_profile = db.query(userprofile).filter(
-            userprofile.user_id == other_user_id
-        ).first()
+        other_profile = db.query(userprofile).filter(userprofile.user_id == other_user_id).first()
 
         is_subscribed = db.query(subscriptions).filter(
             subscriptions.subscriber_user_id == current_user.user_id,
@@ -783,10 +731,7 @@ async def send_message(
                   (other_is_creator and current_is_creator)
 
         if not allowed:
-            raise HTTPException(
-                status_code=403,
-                detail="You must be subscribed to this creator to chat."
-            )
+            raise HTTPException(status_code=403, detail="You must be subscribed to this creator to chat.")
 
         new_msg = chat_messages(
             sender_user_id=current_user.user_id,
@@ -797,9 +742,7 @@ async def send_message(
         db.commit()
         db.refresh(new_msg)
 
-        sender_user = db.query(registeruser).filter(
-            registeruser.id == current_user.user_id
-        ).first()
+        sender_user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
 
         return {
             "id": new_msg.id,
@@ -814,21 +757,16 @@ async def send_message(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
-        
+
 
 @router.post("/retrain_pipeline")
 def trigger_retrain_pipeline():
-    
     result = retrain_if_needed()
-
-    return {
-        "message": "Pipeline executed",
-        "details": result
-    }
+    return {"message": "Pipeline executed", "details": result}
 
 
 # ---------------------------------------------------
-# VERIFY PAYMENT (Macrodroid Integration)
+# VERIFY PAYMENT  (Macrodroid / QR flow)
 # ---------------------------------------------------
 
 @router.post("/verify-payment", response_model=PaymentVerifyResponse)
@@ -838,12 +776,11 @@ async def verify_payment(
     db: Session = Depends(get_db)
 ):
     """
-    Sends transaction_id + source info to Macrodroid phone IP.
-    Updates payment_transactions status and resumes the awaiting process.
+    Records transaction, forwards to Macrodroid phone IP, updates DB.
+    Falls back to 'paid' optimistically if the phone is unreachable.
     """
     MACRODROID_IP = os.getenv("MACRODROID_IP", "http://192.168.1.100:8080")
 
-    # Store a pending transaction record
     txn = payment_transactions(
         transaction_id=data.transaction_id,
         source_type=data.source_type,
@@ -854,7 +791,6 @@ async def verify_payment(
     db.commit()
     db.refresh(txn)
 
-    # Try to reach Macrodroid
     payment_status = "pending"
     try:
         macrodroid_response = requests.post(
@@ -867,46 +803,34 @@ async def verify_payment(
             timeout=10
         )
         result = macrodroid_response.json()
-        payment_status = result.get("status", "paid")  # Macrodroid returns {"status": "paid"|"unpaid"}
+        payment_status = result.get("status", "paid")
         print(f"Macrodroid response: {macrodroid_response.status_code} - {result}")
     except Exception as e:
         print(f"Macrodroid unreachable: {e}")
-        # If Macrodroid is unreachable, mark as paid optimistically for demo purposes
-        payment_status = "paid"
+        payment_status = "paid"  # optimistic for demo
 
-    # Update transaction status in DB
     txn.status = payment_status
     db.commit()
 
-    # Resume awaiting processes based on source_type
     if payment_status == "paid":
         if data.source_type == "company_register":
             user = db.query(registeruser).filter(registeruser.id == data.source_id).first()
             if user:
                 user.company_payment_status = "paid"
                 db.commit()
-
-        elif data.source_type == "subscribe":
-            # source_id is the post_id — the subscription was already created optimistically
-            pass
-
-        elif data.source_type == "join_community":
-            # Community join was already committed — nothing extra to do
-            pass
-
         elif data.source_type == "boost_post":
-            # Mark the post as boosted
             post = db.query(posts).filter(posts.id == data.source_id).first()
             if post:
                 post.status = "boosted"
                 db.commit()
+        # join_community and subscribe: already committed during their respective routes
 
     message = "Payment verified successfully" if payment_status == "paid" else "Payment could not be verified"
     return {"message": message, "status": payment_status}
 
 
 # ---------------------------------------------------
-# BOOST POST (Company only)
+# BOOST POST  (Company only)
 # ---------------------------------------------------
 
 @router.post("/boost-post", response_model=PaymentVerifyResponse)
@@ -915,10 +839,7 @@ async def boost_post(
     current_user: userprofile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
-    Company-only: boost a post by paying ₹1 via the QR flow.
-    Delegates to verify_payment logic.
-    """
+    """Company-only: boost a post by paying ₹1 via the QR / Macrodroid flow."""
     user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
     if not user or user.user_type != "company":
         raise HTTPException(status_code=403, detail="Only company accounts can boost posts")

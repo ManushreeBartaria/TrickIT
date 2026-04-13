@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { authService, getImageUrl } from '../services/api';
-import React, { useState, useEffect } from 'react';
 import { authService, getImageUrl, API_BASE_URL } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 
@@ -297,7 +295,6 @@ const styles = {
         objectFit: 'contain',
         border: '1px solid #ddd',
         borderRadius: '8px',
-        marginBottom: '10px',
         display: 'block',
         margin: '0 auto 10px',
     },
@@ -314,7 +311,7 @@ const styles = {
     },
 };
 
-// Reusable QR Payment Block for modals
+// ─── Reusable QR Payment block ────────────────────────────────────────────────
 const QrPaymentBlock = ({ transactionId, onTransactionIdChange }) => (
     <div style={styles.paymentSection}>
         <div style={styles.paymentNote}>
@@ -331,36 +328,24 @@ const QrPaymentBlock = ({ transactionId, onTransactionIdChange }) => (
     </div>
 );
 
+// ─── Component ────────────────────────────────────────────────────────────────
 const Dashboard = () => {
     const [profile, setProfile] = useState(null);
     const [posts, setPosts] = useState([]);
     const [newPost, setNewPost] = useState({ content: '', mediaFile: null });
+
+    // Report modal
     const [showReportModal, setShowReportModal] = useState(false);
     const [postToReport, setPostToReport] = useState(null);
 
-    // Community state
+    // Community
     const [showCommunityModal, setShowCommunityModal] = useState(false);
     const [communityStatus, setCommunityStatus] = useState('no');
     const [communityForm, setCommunityForm] = useState({ name: '', upi_id: '', transaction_id: '' });
     const [communityLoading, setCommunityLoading] = useState(false);
     const [communityError, setCommunityError] = useState('');
 
-    // Payment / subscribe modal state
-    const [showPaymentModal, setShowPaymentModal] = useState(false);
-    const [pendingSubscribePostId, setPendingSubscribePostId] = useState(null);
-    const [paymentStep, setPaymentStep] = useState('info'); // 'info' | 'verify' | 'done'
-    const [paymentId, setPaymentId] = useState(null);
-    const [upiRef, setUpiRef] = useState('');
-    const [payerName, setPayerName] = useState('');
-    const [payerUpi, setPayerUpi] = useState('');
-    const [paymentLoading, setPaymentLoading] = useState(false);
-    const [paymentError, setPaymentError] = useState('');
-
-    // Use a ref to track if this is the initial mount so the communityStatus
-    // useEffect doesn't fire an extra loadPosts on first render.
-    const isFirstRender = useRef(true);
-
-    // Subscribe payment modal
+    // Subscribe payment modal (our QR flow)
     const [showSubscribeModal, setShowSubscribeModal] = useState(false);
     const [subscribePostId, setSubscribePostId] = useState(null);
     const [subscribeTxnId, setSubscribeTxnId] = useState('');
@@ -376,6 +361,9 @@ const Dashboard = () => {
     const isCompany = localStorage.getItem('user_type') === 'company';
     const navigate = useNavigate();
 
+    // Ref to skip double-load on mount when communityStatus effect fires
+    const isFirstRender = useRef(true);
+
     useEffect(() => {
         loadProfile();
         loadPosts();
@@ -387,9 +375,7 @@ const Dashboard = () => {
         return () => clearInterval(interval);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Reload posts whenever communityStatus changes so the subscribe button
-    // appears immediately on other creators' posts after joining.
-    // Skip the very first render to avoid double-loading on mount.
+    // Reload posts when community status changes (subscribe button appears immediately)
     useEffect(() => {
         if (isFirstRender.current) {
             isFirstRender.current = false;
@@ -449,6 +435,7 @@ const Dashboard = () => {
         navigate('/login');
     };
 
+    // ── Report ────────────────────────────────────────────────────────────────
     const handleReportClick = (postId) => {
         setPostToReport(postId);
         setShowReportModal(true);
@@ -465,10 +452,9 @@ const Dashboard = () => {
                     p.id === postToReport ? { ...p, report_count, is_reported: true } : p
                 ));
             }
-            setShowReportModal(false);
-            setPostToReport(null);
         } catch (error) {
             if (error.response?.data?.detail) alert(error.response.data.detail);
+        } finally {
             setShowReportModal(false);
             setPostToReport(null);
         }
@@ -479,86 +465,7 @@ const Dashboard = () => {
         setPostToReport(null);
     };
 
-    const handleSubscribe = (postId, alreadySubscribed) => {
-        // If already subscribed → do nothing (subscriptions are permanent)
-        if (alreadySubscribed) {
-            return;
-        }
-        // Always show the payment modal to collect name, UPI ID, then UTR
-        setPendingSubscribePostId(postId);
-        setPaymentStep('info');
-        setPaymentId(null);
-        setUpiRef('');
-        setPayerName('');
-        setPayerUpi('');
-        setPaymentError('');
-        setShowPaymentModal(true);
-    };
-
-    const handlePaymentInitiate = async () => {
-        if (!payerName.trim()) {
-            setPaymentError('Please enter your full name.');
-            return;
-        }
-        if (!payerUpi.trim()) {
-            setPaymentError('Please enter your UPI ID.');
-            return;
-        }
-        setPaymentLoading(true);
-        setPaymentError('');
-        try {
-            const res = await authService.initiatePayment();
-            setPaymentId(res.data.payment_id);
-            setPaymentStep('verify');
-        } catch (error) {
-            setPaymentError(error.response?.data?.detail || 'Could not initiate payment.');
-        } finally {
-            setPaymentLoading(false);
-        }
-    };
-
-    const handlePaymentVerify = async () => {
-        if (!upiRef.trim()) {
-            setPaymentError('Please enter your UPI transaction reference.');
-            return;
-        }
-        setPaymentLoading(true);
-        setPaymentError('');
-        try {
-            await authService.verifyPayment({ payment_id: paymentId, upi_ref: upiRef.trim() });
-            // Payment done — now subscribe
-            const response = await authService.subscribePost(pendingSubscribePostId);
-            const { is_subscribed } = response.data;
-            setPosts(prev => prev.map(p =>
-                p.id === pendingSubscribePostId
-                    ? { ...p, is_subscribed, viewer_has_paid: true }
-                    : { ...p, viewer_has_paid: true }
-            ));
-            setPaymentStep('done');
-        } catch (error) {
-            setPaymentError(error.response?.data?.detail || 'Verification failed. Please check your reference.');
-        } finally {
-            setPaymentLoading(false);
-        }
-    };
-
-    const closePaymentModal = () => {
-        setShowPaymentModal(false);
-        setPendingSubscribePostId(null);
-        setPaymentStep('info');
-        setPaymentId(null);
-        setUpiRef('');
-        setPayerName('');
-        setPayerUpi('');
-        setPaymentError('');
-    };
-
-    // ─── Community flow ───────────────────────────────────────────────────────
-
-    const handleJoinCommunityClick = () => {
-        if (communityStatus === 'yes') return;
-        setCommunityForm({ name: '', upi_id: '' });
-    // --- Subscribe: open payment modal ---
+    // ── Subscribe (QR payment modal) ──────────────────────────────────────────
     const handleSubscribeClick = (postId) => {
         setSubscribePostId(postId);
         setSubscribeTxnId('');
@@ -572,22 +479,16 @@ const Dashboard = () => {
         }
         setSubscribeLoading(true);
         try {
-            // First verify payment with Macrodroid
             await authService.verifyPayment({
                 transaction_id: subscribeTxnId.trim(),
                 source_type: 'subscribe',
                 source_id: subscribePostId,
             });
-            // Then subscribe
             const response = await authService.subscribePost(subscribePostId);
             const { is_subscribed } = response.data;
-            setPosts(prev => {
-                const updated = prev.map(p =>
-                    p.id === subscribePostId ? { ...p, is_subscribed } : p
-                );
-                setHasSubscriptions(updated.some(p => p.is_subscribed));
-                return updated;
-            });
+            setPosts(prev => prev.map(p =>
+                p.id === subscribePostId ? { ...p, is_subscribed } : p
+            ));
             setShowSubscribeModal(false);
         } catch (error) {
             alert(error.response?.data?.detail || 'Subscription failed. Please try again.');
@@ -596,13 +497,9 @@ const Dashboard = () => {
         }
     };
 
-    // --- Join Community ---
+    // ── Join Community ────────────────────────────────────────────────────────
     const handleJoinCommunityClick = () => {
         if (communityStatus === 'yes') return;
-        if (!hasSubscriptions) {
-            alert('You must subscribe to at least one creator before joining the community.');
-            return;
-        }
         setCommunityForm({ name: '', upi_id: '', transaction_id: '' });
         setCommunityError('');
         setShowCommunityModal(true);
@@ -626,14 +523,8 @@ const Dashboard = () => {
                 upi_id: communityForm.upi_id.trim(),
                 transaction_id: communityForm.transaction_id.trim(),
             });
-
-            // Close modal first so the UI feels snappy
             setShowCommunityModal(false);
-
-            // Update status — this also triggers the useEffect which calls loadPosts,
-            // so the subscribe button appears immediately on other creators' posts.
             setCommunityStatus(response.data.status);
-
         } catch (error) {
             setCommunityError(error.response?.data?.detail || 'Something went wrong. Please try again.');
         } finally {
@@ -641,45 +532,7 @@ const Dashboard = () => {
         }
     };
 
-    // ─── Render helpers ───────────────────────────────────────────────────────
-
-    // Decide what to render in the subscribe button slot for a given post.
-    // - can_subscribe (from backend) = author is creator AND viewer is not the author
-    //   → show active Subscribe / Subscribed button
-    // - is_own_post && is_community_creator
-    //   → show greyed-out disabled button so the creator can see the feature is live
-    // - otherwise → nothing
-    const renderSubscribeButton = (post) => {
-        if (post.can_subscribe) {
-            const label = post.is_subscribed ? '✓ Subscribed' : '🔒 Subscribe';
-            return (
-                <button
-                    style={post.is_subscribed ? styles.subscribedBtn : styles.subscribeBtn}
-                    onClick={() => handleSubscribe(post.id, post.is_subscribed)}
-                >
-                    {label}
-                </button>
-            );
-        }
-
-        if (post.is_own_post && post.is_community_creator) {
-            return (
-                <button
-                    style={styles.ownPostSubscribeBtn}
-                    disabled
-                    title="Other users see a Subscribe button on your posts"
-                >
-                    + Subscribe
-                </button>
-            );
-        }
-
-        return null;
-    };
-
-    // ─── Render ───────────────────────────────────────────────────────────────
-
-    // --- Boost Post (company only) ---
+    // ── Boost Post (company only) ─────────────────────────────────────────────
     const handleBoostClick = (postId = lastCreatedPostId) => {
         if (!postId) {
             alert('Please create a post first before boosting.');
@@ -712,6 +565,36 @@ const Dashboard = () => {
         }
     };
 
+    // ── Subscribe button renderer ─────────────────────────────────────────────
+    // Uses the can_subscribe / is_own_post flags from the backend
+    const renderSubscribeButton = (post) => {
+        if (post.can_subscribe) {
+            return (
+                <button
+                    style={post.is_subscribed ? styles.subscribedBtn : styles.subscribeBtn}
+                    onClick={() => !post.is_subscribed && handleSubscribeClick(post.id)}
+                >
+                    {post.is_subscribed ? '✓ Subscribed' : '+ Subscribe'}
+                </button>
+            );
+        }
+
+        if (post.is_own_post && post.is_community_creator) {
+            return (
+                <button
+                    style={styles.ownPostSubscribeBtn}
+                    disabled
+                    title="Other users see a Subscribe button on your posts"
+                >
+                    + Subscribe
+                </button>
+            );
+        }
+
+        return null;
+    };
+
+    // ─── Render ───────────────────────────────────────────────────────────────
     return (
         <div style={styles.container}>
             {/* Sidebar */}
@@ -734,12 +617,10 @@ const Dashboard = () => {
                     )}
                     <div style={styles.about}>{profile?.about || 'No bio added yet'}</div>
 
-                    {/* Edit Profile */}
                     <button style={styles.button} onClick={() => navigate('/profile')}>
                         Edit Profile
                     </button>
 
-                    {/* Join Community */}
                     <button
                         style={communityStatus === 'yes' ? styles.alreadyJoinedBtn : styles.joinBtn}
                         onClick={handleJoinCommunityClick}
@@ -748,25 +629,25 @@ const Dashboard = () => {
                     </button>
 
                     {/* View Community — visible to everyone */}
-                        <button
-                            style={styles.viewCommunityBtn}
-                            onClick={() => navigate('/community')}
-                        >
-                            💬 View Community
-                        </button>
+                    <button
+                        style={styles.viewCommunityBtn}
+                        onClick={() => navigate('/community')}
+                    >
+                        💬 View Community
+                    </button>
 
-                    {/* My Subscribers — visible to everyone */}
-                        <button
-                            style={{
-                                ...styles.viewCommunityBtn,
-                                marginTop: '8px',
-                                borderColor: '#2e7d32',
-                                color: '#2e7d32',
-                            }}
-                            onClick={() => navigate('/my-subscribers')}
-                        >
-                            👥 My Subscribers
-                        </button>
+                    {/* My Subscribers */}
+                    <button
+                        style={{
+                            ...styles.viewCommunityBtn,
+                            marginTop: '8px',
+                            borderColor: '#2e7d32',
+                            color: '#2e7d32',
+                        }}
+                        onClick={() => navigate('/my-subscribers')}
+                    >
+                        👥 My Subscribers
+                    </button>
                 </div>
 
                 <div style={styles.nav}>
@@ -797,7 +678,7 @@ const Dashboard = () => {
                         />
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
                             <button type="submit" style={styles.button}>Post</button>
-                            {/* Boost Post button — company only, shown after a post is created */}
+                            {/* Boost Post — company only, activates after creating a post */}
                             {isCompany && (
                                 <button
                                     type="button"
@@ -852,9 +733,7 @@ const Dashboard = () => {
                             </div>
 
                             <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                                {/* Subscribe button — active for others, greyed for own post */}
                                 {renderSubscribeButton(post)}
-
                                 <button
                                     style={post.is_reported ? styles.reportedBtn : styles.reportBtn}
                                     onClick={() => !post.is_reported && handleReportClick(post.id)}
@@ -880,13 +759,13 @@ const Dashboard = () => {
                 ))}
             </div>
 
-            {/* ── Report Modal ──────────────────────────────────────────────── */}
+            {/* ── Report Modal ───────────────────────────────────────────────── */}
             {showReportModal && (
                 <div style={styles.modalOverlay} onClick={cancelReport}>
                     <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
                         <div style={styles.modalHeader}>Report Post?</div>
                         <div style={styles.modalBody}>
-                            Are you sure you want to report this post? If this post receives 3 reports, it will be automatically removed.
+                            Are you sure you want to report this post? If it receives 3 reports it will be automatically removed.
                         </div>
                         <div style={styles.modalActions}>
                             <button style={styles.cancelBtn} onClick={cancelReport}>Cancel</button>
@@ -896,8 +775,7 @@ const Dashboard = () => {
                 </div>
             )}
 
-            {/* ── Join Community Modal ──────────────────────────────────────── */}
-            {/* Subscribe Payment Modal */}
+            {/* ── Subscribe Payment Modal ────────────────────────────────────── */}
             {showSubscribeModal && (
                 <div style={styles.modalOverlay} onClick={() => setShowSubscribeModal(false)}>
                     <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
@@ -910,9 +788,7 @@ const Dashboard = () => {
                             onTransactionIdChange={setSubscribeTxnId}
                         />
                         <div style={styles.modalActions}>
-                            <button style={styles.cancelBtn} onClick={() => setShowSubscribeModal(false)}>
-                                Cancel
-                            </button>
+                            <button style={styles.cancelBtn} onClick={() => setShowSubscribeModal(false)}>Cancel</button>
                             <button
                                 style={{ ...styles.submitBtn, opacity: subscribeLoading ? 0.7 : 1 }}
                                 disabled={subscribeLoading}
@@ -925,7 +801,7 @@ const Dashboard = () => {
                 </div>
             )}
 
-            {/* Join Community Modal */}
+            {/* ── Join Community Modal ───────────────────────────────────────── */}
             {showCommunityModal && (
                 <div style={styles.modalOverlay} onClick={() => setShowCommunityModal(false)}>
                     <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
@@ -950,7 +826,6 @@ const Dashboard = () => {
                                 value={communityForm.upi_id}
                                 onChange={(e) => setCommunityForm({ ...communityForm, upi_id: e.target.value })}
                             />
-                            {/* QR Payment block */}
                             <QrPaymentBlock
                                 transactionId={communityForm.transaction_id}
                                 onTransactionIdChange={(val) => setCommunityForm({ ...communityForm, transaction_id: val })}
@@ -976,108 +851,21 @@ const Dashboard = () => {
                     </div>
                 </div>
             )}
-            {/* ── Payment Modal ─────────────────────────────────────────────── */}
-            {showPaymentModal && (
-                <div style={styles.modalOverlay} onClick={paymentStep !== 'done' ? closePaymentModal : undefined}>
-                    <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
-                        {paymentStep === 'info' && (
-                            <>
-                                <div style={styles.modalHeader}>💳 Subscribe to Creator</div>
-                                <div style={styles.modalBody}>
-                                    A one-time platform fee of <strong>₹99</strong> is required to subscribe and unlock direct chat with creators.<br /><br />
-                                    Pay to UPI ID: <strong>trickit@upi</strong><br />
-                                    Then fill in your details below and click "I have paid ₹99".
-                                </div>
-                                <label style={styles.formLabel}>Full Name</label>
-                                <input
-                                    style={styles.formInput}
-                                    type="text"
-                                    placeholder="Enter your full name"
-                                    value={payerName}
-                                    onChange={(e) => setPayerName(e.target.value)}
-                                />
-                                <label style={styles.formLabel}>Your UPI ID</label>
-                                <input
-                                    style={styles.formInput}
-                                    type="text"
-                                    placeholder="e.g. yourname@upi"
-                                    value={payerUpi}
-                                    onChange={(e) => setPayerUpi(e.target.value)}
-                                />
-                                {paymentError && (
-                                    <div style={{ color: '#cc0000', fontSize: '13px', marginBottom: '10px' }}>{paymentError}</div>
-                                )}
-                                <div style={styles.modalActions}>
-                                    <button style={styles.cancelBtn} onClick={closePaymentModal}>Cancel</button>
-                                    <button
-                                        style={{ ...styles.submitBtn, opacity: paymentLoading ? 0.7 : 1 }}
-                                        onClick={handlePaymentInitiate}
-                                        disabled={paymentLoading}
-                                    >
-                                        {paymentLoading ? 'Processing...' : 'I have paid ₹99'}
-                                    </button>
-                                </div>
-                            </>
-                        )}
 
-                        {paymentStep === 'verify' && (
-                            <>
-                                <div style={styles.modalHeader}>✅ Enter Transaction Reference</div>
-                                <div style={styles.modalBody}>
-                                    Enter the UPI transaction reference (UTR) from your payment app to verify your payment.
-                                </div>
-                                <label style={styles.formLabel}>UPI Transaction Reference (UTR)</label>
-                                <input
-                                    style={styles.formInput}
-                                    type="text"
-                                    placeholder="e.g. 123456789012"
-                                    value={upiRef}
-                                    onChange={(e) => setUpiRef(e.target.value)}
-                                />
-                                {paymentError && (
-                                    <div style={{ color: '#cc0000', fontSize: '13px', marginBottom: '10px' }}>{paymentError}</div>
-                                )}
-                                <div style={styles.modalActions}>
-                                    <button style={styles.cancelBtn} onClick={closePaymentModal}>Cancel</button>
-                                    <button
-                                        style={{ ...styles.submitBtn, opacity: paymentLoading ? 0.7 : 1 }}
-                                        onClick={handlePaymentVerify}
-                                        disabled={paymentLoading}
-                                    >
-                                        {paymentLoading ? 'Verifying...' : 'Verify & Subscribe'}
-                                    </button>
-                                </div>
-                            </>
-                        )}
-
-                        {paymentStep === 'done' && (
-                            <>
-                                <div style={styles.modalHeader}>🎉 Subscribed!</div>
-                                <div style={styles.modalBody}>
-                                    Payment verified. You are now subscribed to this creator and can chat with them via <strong>View Community</strong>.
-                                </div>
-                                <div style={styles.modalActions}>
-                                    <button style={styles.submitBtn} onClick={closePaymentModal}>Done</button>
-                                </div>
-                            </>
-                        )}
-
-            {/* Boost Post Modal (Company Only) */}
+            {/* ── Boost Post Modal (Company only) ───────────────────────────── */}
             {showBoostModal && (
                 <div style={styles.modalOverlay} onClick={() => setShowBoostModal(false)}>
                     <div style={styles.modalContent} onClick={(e) => e.stopPropagation()}>
                         <div style={styles.modalHeader}>🚀 Boost Post</div>
                         <div style={styles.modalBody}>
-                            Boosting a post requires a <strong>₹1 demo payment</strong>. Your post will be highlighted for more visibility.
+                            Boosting requires a <strong>₹1 demo payment</strong>. Your post will be highlighted for more visibility.
                         </div>
                         <QrPaymentBlock
                             transactionId={boostTxnId}
                             onTransactionIdChange={setBoostTxnId}
                         />
                         <div style={styles.modalActions}>
-                            <button style={styles.cancelBtn} onClick={() => setShowBoostModal(false)}>
-                                Cancel
-                            </button>
+                            <button style={styles.cancelBtn} onClick={() => setShowBoostModal(false)}>Cancel</button>
                             <button
                                 style={{ ...styles.boostBtn, padding: '10px 20px', marginLeft: 0, opacity: boostLoading ? 0.7 : 1 }}
                                 disabled={boostLoading}

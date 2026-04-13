@@ -14,19 +14,15 @@ except ImportError:
 
 load_dotenv()
 
-<<<<<<< HEAD
-client = None
+model = None
 if genai is not None:
     try:
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-    except Exception:
-        client = None
-=======
-api_key = os.getenv("GEMINI_API_KEY")
-genai.configure(api_key=api_key)
-
-model = genai.GenerativeModel("gemini-3-flash-preview")  
->>>>>>> 59779fdac85ec9b254dd2a5f7e00e63e2815612d
+        api_key = os.getenv("GEMINI_API_KEY")
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel("gemini-1.5-flash")
+    except Exception as e:
+        print(f"Gemini init error: {e}")
+        model = None
 
 
 def llm_check(content: str) -> str:
@@ -85,14 +81,11 @@ OR
 non_educational
 """
 
-    if client is None:
+    if model is None:
         return "non_educational"
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-        )
+        response = model.generate_content(prompt)
 
         result = response.text.strip().lower()
 
