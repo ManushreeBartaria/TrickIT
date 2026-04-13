@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Text, UniqueConstraint, DateTime
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, UniqueConstraint, DateTime, Boolean
 from app.database.connections import Base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -120,7 +120,26 @@ class community_creators(Base):
     creator_id = Column(Integer, ForeignKey("profile.id"), nullable=False, unique=True)
     name = Column(String(100), nullable=False)
     upi_id = Column(String(100), nullable=False)
+    subscription_fee = Column(Integer, default=0, nullable=False)
     joined_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------
+# PAYMENTS
+# ---------------------------------------------------
+
+class payments(Base):
+    __tablename__ = "payments"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("register_user.id"), nullable=False, unique=True)
+    amount = Column(String(20), nullable=False, default="99.00")
+    upi_ref = Column(String(100), nullable=True)          # reference entered by user
+    status = Column(String(20), nullable=False, default="pending")  # pending | completed
+    initiated_at = Column(DateTime, default=datetime.utcnow)
+    completed_at = Column(DateTime, nullable=True)
+
+    user = relationship("registeruser", foreign_keys=[user_id])
 
 
 # ---------------------------------------------------

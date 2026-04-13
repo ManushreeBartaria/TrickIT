@@ -95,14 +95,9 @@ const Community = () => {
 
     const checkAccessAndLoad = async () => {
         try {
-            const statusRes = await authService.communityStatus();
-            if (statusRes.data.status !== 'yes') {
-                navigate('/dashboard');
-                return;
-            }
             loadCreators();
         } catch (error) {
-            navigate('/dashboard');
+            console.error('Error loading community:', error);
         }
     };
 

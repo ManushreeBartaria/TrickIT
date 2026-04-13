@@ -9,6 +9,7 @@ import ResetPassword from './components/ResetPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 import Community from './components/Community';
 import Chat from './components/Chat';
+import MySubscribers from './components/MySubscribers';
 
 function App() {
   return (
@@ -48,6 +49,14 @@ function App() {
           element={
             <ProtectedRoute>
               <Chat />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/my-subscribers"
+          element={
+            <ProtectedRoute>
+              <MySubscribers />
             </ProtectedRoute>
           }
         />
