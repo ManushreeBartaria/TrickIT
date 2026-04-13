@@ -220,6 +220,7 @@ class PaymentVerifyRequest(BaseModel):
     transaction_id: str
     source_type: str   # company_register / join_community / subscribe / boost_post
     source_id: int     # user_id or post_id
+    amount: Optional[int] = 1  # payment amount passed to Macrodroid notification
 
     model_config = {"from_attributes": True}
 
@@ -234,5 +235,32 @@ class PaymentVerifyResponse(BaseModel):
 class BoostPostRequest(BaseModel):
     post_id: int
     transaction_id: str
+
+    model_config = {"from_attributes": True}
+
+
+# ------------------------------------------------
+# MACRODROID CALLBACK  (Macrodroid → Backend)
+# ------------------------------------------------
+
+class MacrodroidCallbackRequest(BaseModel):
+    """
+    Body that Macrodroid POSTs to /payment-callback after the user
+    approves or rejects the payment notification on their phone.
+    """
+    transaction_id: str           # same txn_id that was forwarded earlier
+    decision: str                 # 'approved' or 'rejected'
+    txn_db_id: Optional[int] = None  # internal DB id passed as &txn_db_id=... param
+
+    model_config = {"from_attributes": True}
+
+
+# ------------------------------------------------
+# PAYMENT STATUS  (Frontend polling)
+# ------------------------------------------------
+
+class PaymentStatusResponse(BaseModel):
+    status: str    # paid / pending / unpaid / none
+    message: str
 
     model_config = {"from_attributes": True}

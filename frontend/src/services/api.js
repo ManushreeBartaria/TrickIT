@@ -42,8 +42,11 @@ export const authService = {
     getChatHistory: (userId) => api.get(`/api/chat/${userId}`),
     sendMessage: (userId, content) => api.post(`/api/chat/${userId}`, { content }),
     // QR / Macrodroid payment flow
-    verifyPayment: (data) => api.post('/api/verify-payment', data),
+    verifyPayment: (data) => api.post('/api/verify-payment', data),          // data: { transaction_id, source_type, source_id, amount? }
     boostPost: (data) => api.post('/api/boost-post', data),
+    // Poll this after verifyPayment; status: paid|pending|unpaid|none
+    checkPaymentStatus: (source_type, source_id) =>
+        api.get('/api/payment-status', { params: { source_type, source_id } }),
 };
 
 api.interceptors.request.use(

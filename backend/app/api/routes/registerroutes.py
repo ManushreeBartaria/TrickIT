@@ -5,7 +5,7 @@ from datetime import datetime as dt
 from app.model.registeruser import community_creators, payment_transactions, payments
 from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
 from app.schemas.register import SendMessageRequest, MessageResponse, CreatorResponse
-from app.schemas.register import PaymentVerifyRequest, PaymentVerifyResponse, BoostPostRequest
+from app.schemas.register import PaymentVerifyRequest, PaymentVerifyResponse, BoostPostRequest, MacrodroidCallbackRequest, PaymentStatusResponse
 from app.model.registeruser import chat_messages
 from turtle import back
 import httpx
@@ -365,7 +365,7 @@ async def get_posts(
                 "can_subscribe": can_subscribe,
                 "is_community_creator": author_is_creator,
                 "is_own_post": is_own_post,
-                "viewer_has_paid": False,
+                "viewer_has_paid": True,  # no longer gated on payment table
             })
 
         return posts_data
@@ -427,16 +427,19 @@ async def toggle_subscribe(
     current_user: userprofile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    """
+    Subscribe immediately — no payment gate here.
+    Payment is recorded separately via /verify-payment and stays 'pending'
+    until Macrodroid confirms asynchronously.
+    """
     try:
         post = db.query(posts).filter(posts.id == post_id).first()
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
-        # Block self-subscription
         if post.user_id == current_user.user_id:
             raise HTTPException(status_code=400, detail="You cannot subscribe to your own posts")
 
-        # Check the post author is actually a creator
         author_profile = db.query(userprofile).filter(userprofile.user_id == post.user_id).first()
         if not author_profile or author_profile.status != "yes":
             raise HTTPException(status_code=400, detail="This user is not a community creator")
@@ -769,6 +772,12 @@ def trigger_retrain_pipeline():
 # VERIFY PAYMENT  (Macrodroid / QR flow)
 # ---------------------------------------------------
 
+MACRODROID_WEBHOOK = os.getenv(
+    "MACRODROID_WEBHOOK",
+    "https://trigger.macrodroid.com/189afb04-259f-4283-80a3-4470c83a7552/payment_approval"
+)
+
+
 @router.post("/verify-payment", response_model=PaymentVerifyResponse)
 async def verify_payment(
     data: PaymentVerifyRequest,
@@ -776,11 +785,13 @@ async def verify_payment(
     db: Session = Depends(get_db)
 ):
     """
-    Records transaction, forwards to Macrodroid phone IP, updates DB.
-    Falls back to 'paid' optimistically if the phone is unreachable.
+    1. Records the transaction as PENDING in the DB.
+    2. Fires a GET request to Macrodroid's public webhook URL (with query params)
+       so the phone receives a notification for manual approval.
+    3. Returns immediately — does NOT block on Macrodroid's async response.
+    4. Macrodroid will later call /payment-callback with approved or rejected.
     """
-    MACRODROID_IP = os.getenv("MACRODROID_IP", "http://192.168.1.100:8080")
-
+    # Record transaction as pending — stays pending until Macrodroid calls back
     txn = payment_transactions(
         transaction_id=data.transaction_id,
         source_type=data.source_type,
@@ -791,42 +802,164 @@ async def verify_payment(
     db.commit()
     db.refresh(txn)
 
-    payment_status = "pending"
+    # Fire Macrodroid webhook — GET with query params (best-effort, don't block)
     try:
-        macrodroid_response = requests.post(
-            MACRODROID_IP,
-            json={
-                "transaction_id": data.transaction_id,
-                "source_type": data.source_type,
-                "source_id": data.source_id
-            },
-            timeout=10
+        macro_url = (
+            f"{MACRODROID_WEBHOOK}"
+            f"?purpose={data.source_type}"
+            f"&txn_id={data.transaction_id}"
+            f"&amount={data.amount or 1}"
+            f"&source_id={data.source_id}"
+            f"&txn_db_id={txn.id}"
         )
-        result = macrodroid_response.json()
-        payment_status = result.get("status", "paid")
-        print(f"Macrodroid response: {macrodroid_response.status_code} - {result}")
+        resp = requests.get(macro_url, timeout=10)
+        print(f"[Macrodroid] webhook fired → {resp.status_code}")
     except Exception as e:
-        print(f"Macrodroid unreachable: {e}")
-        payment_status = "paid"  # optimistic for demo
+        print(f"[Macrodroid] webhook fire failed (transaction stays pending): {e}")
 
-    txn.status = payment_status
-    db.commit()
+    # Always return pending immediately — Macrodroid will confirm asynchronously
+    return {"message": "Payment recorded and approval request sent", "status": "pending"}
 
-    if payment_status == "paid":
-        if data.source_type == "company_register":
-            user = db.query(registeruser).filter(registeruser.id == data.source_id).first()
+
+# ---------------------------------------------------
+# PAYMENT CALLBACK  (Macrodroid → Backend)
+# ---------------------------------------------------
+
+@router.post("/payment-callback", response_model=PaymentVerifyResponse)
+async def payment_callback(
+    data: MacrodroidCallbackRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Called by Macrodroid after the user approves or rejects on the phone.
+    - approved  → status = 'paid'   → feature stays active
+    - rejected  → status = 'unpaid' → feature is deactivated (frontend re-shows payment UI)
+    - anything else kept as 'pending'
+    """
+    # Find the transaction by txn_db_id (preferred) or transaction_id string
+    txn = None
+    if data.txn_db_id:
+        txn = db.query(payment_transactions).filter(
+            payment_transactions.id == data.txn_db_id
+        ).first()
+    if not txn:
+        txn = db.query(payment_transactions).filter(
+            payment_transactions.transaction_id == data.transaction_id
+        ).order_by(payment_transactions.id.desc()).first()
+
+    if not txn:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    decision = (data.decision or "").lower().strip()
+
+    if decision == "approved":
+        txn.status = "paid"
+        db.commit()
+
+        # Apply side-effects for the confirmed payment
+        if txn.source_type == "company_register":
+            user = db.query(registeruser).filter(registeruser.id == txn.source_id).first()
             if user:
                 user.company_payment_status = "paid"
                 db.commit()
-        elif data.source_type == "boost_post":
-            post = db.query(posts).filter(posts.id == data.source_id).first()
+
+        elif txn.source_type == "boost_post":
+            post = db.query(posts).filter(posts.id == txn.source_id).first()
             if post:
                 post.status = "boosted"
                 db.commit()
-        # join_community and subscribe: already committed during their respective routes
 
-    message = "Payment verified successfully" if payment_status == "paid" else "Payment could not be verified"
-    return {"message": message, "status": payment_status}
+        # subscribe / join_community: these were already recorded; no extra action needed
+        print(f"[payment-callback] txn={txn.id} APPROVED → paid")
+        return {"message": "Payment approved and recorded", "status": "paid"}
+
+    elif decision == "rejected":
+        txn.status = "unpaid"
+        db.commit()
+
+        # Deactivate the feature that was activated optimistically
+        if txn.source_type == "company_register":
+            user = db.query(registeruser).filter(registeruser.id == txn.source_id).first()
+            if user:
+                user.company_payment_status = "unpaid"
+                db.commit()
+
+        elif txn.source_type == "boost_post":
+            post = db.query(posts).filter(posts.id == txn.source_id).first()
+            if post and post.status == "boosted":
+                post.status = "approved"  # revert back to normal approved
+                db.commit()
+
+        elif txn.source_type == "join_community":
+            # Revert creator status — set profile status back to 'no'
+            profile_row = db.query(userprofile).filter(
+                userprofile.user_id == txn.source_id
+            ).first()
+            if profile_row:
+                profile_row.status = "no"
+                db.commit()
+            # Also remove community_creators entry
+            creator_row = db.query(community_creators).filter(
+                community_creators.creator_id == txn.source_id
+            ).first()
+            if creator_row:
+                db.delete(creator_row)
+                db.commit()
+
+        elif txn.source_type == "subscribe":
+            # Revert the subscription that was eagerly added
+            sub_row = db.query(subscriptions).filter(
+                subscriptions.subscriber_user_id == txn.source_id
+            ).first()
+            # We need the subscribed_to_user_id too — look it up via post
+            # source_id for subscribe is post_id
+            post = db.query(posts).filter(posts.id == txn.source_id).first()
+            if post:
+                sub_row = db.query(subscriptions).filter(
+                    subscriptions.subscriber_user_id == txn.source_id,
+                    subscriptions.subscribed_to_user_id == post.user_id
+                ).first()
+                if sub_row:
+                    db.delete(sub_row)
+                    db.commit()
+
+        print(f"[payment-callback] txn={txn.id} REJECTED → unpaid, feature deactivated")
+        return {"message": "Payment rejected, feature deactivated", "status": "unpaid"}
+
+    else:
+        # Unknown decision — keep as pending
+        print(f"[payment-callback] txn={txn.id} unknown decision='{decision}', staying pending")
+        return {"message": "Unknown decision, transaction stays pending", "status": "pending"}
+
+
+# ---------------------------------------------------
+# PAYMENT STATUS  (Frontend polling)
+# ---------------------------------------------------
+
+@router.get("/payment-status", response_model=PaymentStatusResponse)
+async def payment_status(
+    source_type: str,
+    source_id: int,
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns the latest payment status for a given (source_type, source_id) pair.
+    Frontend polls this to know when to hide/show the payment UI.
+    - paid    → feature is active, no payment UI
+    - pending → feature is active, awaiting confirmation
+    - unpaid  → feature is deactivated, show payment UI again
+    - none    → no transaction found
+    """
+    txn = db.query(payment_transactions).filter(
+        payment_transactions.source_type == source_type,
+        payment_transactions.source_id == source_id
+    ).order_by(payment_transactions.id.desc()).first()
+
+    if not txn:
+        return {"status": "none", "message": "No transaction found"}
+
+    return {"status": txn.status, "message": f"Payment is {txn.status}"}
 
 
 # ---------------------------------------------------
@@ -839,7 +972,11 @@ async def boost_post(
     current_user: userprofile = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Company-only: boost a post by paying ₹1 via the QR / Macrodroid flow."""
+    """
+    Company-only: records the boost payment as PENDING and immediately marks
+    the post as boosted so the user isn't blocked. Macrodroid confirms payment
+    asynchronously via /payment-callback — if rejected the post reverts.
+    """
     user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
     if not user or user.user_type != "company":
         raise HTTPException(status_code=403, detail="Only company accounts can boost posts")
@@ -848,8 +985,7 @@ async def boost_post(
     if not post:
         raise HTTPException(status_code=404, detail="Post not found or not yours")
 
-    MACRODROID_IP = os.getenv("MACRODROID_IP", "http://192.168.1.100:8080")
-
+    # Record txn as pending — Macrodroid will confirm later via /payment-callback
     txn = payment_transactions(
         transaction_id=data.transaction_id,
         source_type="boost_post",
@@ -857,30 +993,25 @@ async def boost_post(
         status="pending"
     )
     db.add(txn)
+
+    # Optimistically mark as boosted — will be reverted if Macrodroid rejects
+    post.status = "boosted"
     db.commit()
     db.refresh(txn)
 
-    payment_status = "pending"
+    # Fire Macrodroid webhook (best-effort)
     try:
-        macrodroid_response = requests.post(
-            MACRODROID_IP,
-            json={
-                "transaction_id": data.transaction_id,
-                "source_type": "boost_post",
-                "source_id": data.post_id
-            },
-            timeout=10
+        macro_url = (
+            f"{MACRODROID_WEBHOOK}"
+            f"?purpose=boost_post"
+            f"&txn_id={data.transaction_id}"
+            f"&amount=1"
+            f"&source_id={data.post_id}"
+            f"&txn_db_id={txn.id}"
         )
-        result = macrodroid_response.json()
-        payment_status = result.get("status", "paid")
+        resp = requests.get(macro_url, timeout=10)
+        print(f"[Macrodroid] boost webhook → {resp.status_code}")
     except Exception as e:
-        print(f"Macrodroid unreachable: {e}")
-        payment_status = "paid"
+        print(f"[Macrodroid] boost webhook failed: {e}")
 
-    txn.status = payment_status
-    if payment_status == "paid":
-        post.status = "boosted"
-    db.commit()
-
-    message = "Post boosted successfully!" if payment_status == "paid" else "Payment could not be verified"
-    return {"message": message, "status": payment_status}
+    return {"message": "Post boost submitted! It will stay active once payment is confirmed.", "status": "pending"}

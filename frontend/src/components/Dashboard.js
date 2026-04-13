@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { authService, getImageUrl, API_BASE_URL } from '../services/api';
 import { useNavigate } from 'react-router-dom';
 
-const QR_URL = `${API_BASE_URL}/uploads/qr.png`;
+const QR_URL = `${API_BASE_URL}/uploads/qr.jpeg`;
 
 const styles = {
     container: {
@@ -358,6 +358,10 @@ const Dashboard = () => {
     const [lastCreatedPostId, setLastCreatedPostId] = useState(null);
     const [boostLoading, setBoostLoading] = useState(false);
 
+    // Track posts whose payment was rejected by Macrodroid (set → re-show payment UI)
+    const [rejectedPayments, setRejectedPayments] = useState({}); // { postId: true }
+    const paymentPollers = useRef({});  // active polling intervals keyed by postId
+
     const isCompany = localStorage.getItem('user_type') === 'company';
     const navigate = useNavigate();
 
@@ -411,6 +415,43 @@ const Dashboard = () => {
             if (error.response?.status === 401) navigate('/login');
         }
     };
+
+    // ── Payment status poller ─────────────────────────────────────────────────
+    // Starts polling /payment-status for a specific post subscription.
+    // Stops when the server returns 'paid' or 'unpaid'.
+    const startPaymentPoller = useCallback((postId) => {
+        if (paymentPollers.current[postId]) return; // already polling
+        const interval = setInterval(async () => {
+            try {
+                const res = await authService.checkPaymentStatus('subscribe', postId);
+                const status = res.data?.status;
+                if (status === 'paid') {
+                    // Confirmed — stop polling, clear any rejection flag
+                    clearInterval(paymentPollers.current[postId]);
+                    delete paymentPollers.current[postId];
+                    setRejectedPayments(prev => { const n = { ...prev }; delete n[postId]; return n; });
+                } else if (status === 'unpaid') {
+                    // Rejected — stop polling, flag for re-payment
+                    clearInterval(paymentPollers.current[postId]);
+                    delete paymentPollers.current[postId];
+                    setRejectedPayments(prev => ({ ...prev, [postId]: true }));
+                    // Revert the optimistic subscription in the posts list
+                    setPosts(prev => prev.map(p =>
+                        p.id === postId ? { ...p, is_subscribed: false } : p
+                    ));
+                }
+                // 'pending' → keep polling
+            } catch (e) {
+                console.warn('Payment status poll error:', e);
+            }
+        }, 8000); // check every 8 seconds
+        paymentPollers.current[postId] = interval;
+    }, []);
+
+    // Clean up all pollers on unmount
+    useEffect(() => () => {
+        Object.values(paymentPollers.current).forEach(clearInterval);
+    }, []);
 
     const handleCreatePost = async (e) => {
         e.preventDefault();
@@ -474,21 +515,29 @@ const Dashboard = () => {
 
     const confirmSubscribe = async () => {
         if (!subscribeTxnId.trim()) {
-            alert('Please enter the Transaction ID after making the ₹1 payment.');
+            alert('Please enter the Transaction ID after making the \u20b91 payment.');
             return;
         }
         setSubscribeLoading(true);
         try {
-            await authService.verifyPayment({
+            // Fire payment record in background — hits Macrodroid webhook
+            authService.verifyPayment({
                 transaction_id: subscribeTxnId.trim(),
                 source_type: 'subscribe',
                 source_id: subscribePostId,
-            });
+                amount: 1,
+            }).catch(e => console.warn('Payment record error:', e));
+
+            // Subscribe immediately without waiting for Macrodroid
             const response = await authService.subscribePost(subscribePostId);
             const { is_subscribed } = response.data;
             setPosts(prev => prev.map(p =>
                 p.id === subscribePostId ? { ...p, is_subscribed } : p
             ));
+            // Clear any previous rejection flag for this post
+            setRejectedPayments(prev => { const n = { ...prev }; delete n[subscribePostId]; return n; });
+            // Start polling to detect if Macrodroid rejects
+            startPaymentPoller(subscribePostId);
             setShowSubscribeModal(false);
         } catch (error) {
             alert(error.response?.data?.detail || 'Subscription failed. Please try again.');
@@ -545,19 +594,21 @@ const Dashboard = () => {
 
     const confirmBoost = async () => {
         if (!boostTxnId.trim()) {
-            alert('Please enter the Transaction ID after making the ₹1 payment.');
+            alert('Please enter the Transaction ID after making the \u20b91 payment.');
             return;
         }
         setBoostLoading(true);
         try {
-            const response = await authService.boostPost({
+            // Fire boost + payment record in background — user is not blocked
+            authService.boostPost({
                 post_id: boostPostId,
                 transaction_id: boostTxnId.trim(),
-            });
-            alert(response.data.message || 'Post boosted successfully!');
+            }).catch(e => console.warn('Boost record error:', e));
+
             setShowBoostModal(false);
             setLastCreatedPostId(null);
-            loadPosts();
+            // Brief delay so boosted status shows on refresh
+            setTimeout(() => loadPosts(), 400);
         } catch (error) {
             alert(error.response?.data?.detail || 'Boost failed. Please try again.');
         } finally {
@@ -568,6 +619,28 @@ const Dashboard = () => {
     // ── Subscribe button renderer ─────────────────────────────────────────────
     // Uses the can_subscribe / is_own_post flags from the backend
     const renderSubscribeButton = (post) => {
+        // Payment was rejected → show red button to re-trigger payment
+        if (rejectedPayments[post.id]) {
+            return (
+                <button
+                    style={{
+                        backgroundColor: '#cc0000',
+                        color: '#fff',
+                        border: 'none',
+                        padding: '6px 16px',
+                        borderRadius: '16px',
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                        fontWeight: '600',
+                    }}
+                    onClick={() => handleSubscribeClick(post.id)}
+                    title="Payment was rejected. Click to pay again."
+                >
+                    ⚠️ Pay Again
+                </button>
+            );
+        }
+
         if (post.can_subscribe) {
             return (
                 <button
