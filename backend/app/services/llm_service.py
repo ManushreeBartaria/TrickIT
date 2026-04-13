@@ -19,7 +19,7 @@ if genai is not None:
     try:
         api_key = os.getenv("GEMINI_API_KEY")
         genai.configure(api_key=api_key)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        model = genai.GenerativeModel("gemini-3-flash-preview")
     except Exception as e:
         print(f"Gemini init error: {e}")
         model = None
@@ -27,63 +27,55 @@ if genai is not None:
 
 def llm_check(content: str) -> str:
     prompt = f"""
-You are a strict AI moderator for an educational platform called TrickIT.
+You are a content moderator for an educational platform called TrickIT.
 
 Your task is to classify whether a post is EDUCATIONAL or NON_EDUCATIONAL.
 
-A post is EDUCATIONAL ONLY if it clearly contains:
-• learning content
-• study techniques
+EDUCATIONAL posts include:
+• explanations of concepts
+• study methods
 • coding knowledge
-• exam preparation tips
-• academic explanations
-• problem solving strategies
-• productivity methods related to learning
+• technology discussions
+• DevOps tools or engineering concepts
+• project building ideas
+• workflows, tutorials, or guides
+• learning insights or productivity tips related to education
 
 Examples of EDUCATIONAL posts:
-- "How to remember formulas using the Feynman technique"
-- "Dynamic Programming trick for solving knapsack problems"
-- "3 tips to focus better while studying"
-- "How to understand neural networks easily"
--"any tech related content"
-- "How to prepare for coding interviews"
--"devops related content"
--"any project building content"
 
-A post is NON_EDUCATIONAL if it contains:
+* "Dynamic Programming trick for solving knapsack problems"
+* "How Jenkins automates CI/CD pipelines"
+* "3 techniques to remember formulas faster"
+* "Steps to deploy a FastAPI app using Docker"
+* "How Kubernetes rolling updates work"
+
+NON_EDUCATIONAL posts include:
 • greetings
-• casual messages
+• casual conversation
 • celebrations
-• jokes or memes
-• personal updates
-• emotional expressions
-• unrelated conversation
-• advertisements
-• spam
+• emotional updates
+• memes or jokes
+• advertisements or spam
+• unrelated personal content
 
 Examples of NON_EDUCATIONAL posts:
-- "Happy birthday bro!"
-- "Happy anniversary mom and dad"
-- "Good morning everyone"
-- "Feeling sad today"
-- "Check out my new phone"
-- "This meme is funny"
+
+* "Good morning everyone!"
+* "Happy birthday bro"
+* "Feeling sad today"
+* "Check out my new phone"
 
 POST:
-\"\"\"{content}\"\"\"
+"{content}"
 
-Classification rules:
-1. If the post contains NO learning value → NON_EDUCATIONAL
-2. Greetings or celebrations → NON_EDUCATIONAL
-3. Personal messages → NON_EDUCATIONAL
-4. Random statements → NON_EDUCATIONAL
+Classification rule:
+If the post contains **any meaningful learning, technical explanation, or educational insight**, classify it as EDUCATIONAL.
 
-Output format:
 Return ONLY one word:
 educational
 OR
 non_educational
-"""
+    """
 
     if model is None:
         return "non_educational"
