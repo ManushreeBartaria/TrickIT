@@ -5,7 +5,7 @@ from datetime import datetime as dt
 from app.model.registeruser import community_creators, payment_transactions, payments
 from app.schemas.register import JoinCommunityRequest, JoinCommunityResponse
 from app.schemas.register import SendMessageRequest, MessageResponse, CreatorResponse
-from app.schemas.register import PaymentVerifyRequest, PaymentVerifyResponse, BoostPostRequest, MacrodroidCallbackRequest, PaymentStatusResponse
+from app.schemas.register import PaymentVerifyRequest, PaymentVerifyResponse, BoostPostRequest, PaymentStatusResponse
 from app.model.registeruser import chat_messages
 from turtle import back
 import httpx
@@ -496,7 +496,6 @@ async def join_community(
             creator_id=current_user.id,
             name=data.name,
             upi_id=data.upi_id,
-            subscription_fee="0.00"
         )
         db.add(new_creator)
 
@@ -810,7 +809,6 @@ async def verify_payment(
             f"&txn_id={data.transaction_id}"
             f"&amount={data.amount or 1}"
             f"&source_id={data.source_id}"
-            f"&txn_db_id={txn.id}"
         )
         resp = requests.get(macro_url, timeout=10)
         print(f"[Macrodroid] webhook fired → {resp.status_code}")
@@ -821,115 +819,48 @@ async def verify_payment(
     return {"message": "Payment recorded and approval request sent", "status": "pending"}
 
 
-# ---------------------------------------------------
-# PAYMENT CALLBACK  (Macrodroid → Backend)
-# ---------------------------------------------------
+def _revert_unpaid_feature(txn, current_user, db):
+    """
+    Idempotently roll back DB state for a transaction that was manually
+    set to 'unpaid'. Safe to call multiple times — checks before acting.
+    """
+    if txn.source_type == "boost_post":
+        post = db.query(posts).filter(posts.id == txn.source_id).first()
+        if post and post.status == "boosted":
+            post.status = "approved"
+            db.commit()
 
-@router.post("/payment-callback", response_model=PaymentVerifyResponse)
-async def payment_callback(
-    data: MacrodroidCallbackRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    Called by Macrodroid after the user approves or rejects on the phone.
-    - approved  → status = 'paid'   → feature stays active
-    - rejected  → status = 'unpaid' → feature is deactivated (frontend re-shows payment UI)
-    - anything else kept as 'pending'
-    """
-    # Find the transaction by txn_db_id (preferred) or transaction_id string
-    txn = None
-    if data.txn_db_id:
-        txn = db.query(payment_transactions).filter(
-            payment_transactions.id == data.txn_db_id
+    elif txn.source_type == "join_community":
+        profile_row = db.query(userprofile).filter(
+            userprofile.user_id == txn.source_id
         ).first()
-    if not txn:
-        txn = db.query(payment_transactions).filter(
-            payment_transactions.transaction_id == data.transaction_id
-        ).order_by(payment_transactions.id.desc()).first()
+        if profile_row and profile_row.status == "yes":
+            profile_row.status = "no"
+            db.commit()
+        creator_row = db.query(community_creators).filter(
+            community_creators.creator_id == txn.source_id
+        ).first()
+        if creator_row:
+            db.delete(creator_row)
+            db.commit()
 
-    if not txn:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    decision = (data.decision or "").lower().strip()
-
-    if decision == "approved":
-        txn.status = "paid"
-        db.commit()
-
-        # Apply side-effects for the confirmed payment
-        if txn.source_type == "company_register":
-            user = db.query(registeruser).filter(registeruser.id == txn.source_id).first()
-            if user:
-                user.company_payment_status = "paid"
-                db.commit()
-
-        elif txn.source_type == "boost_post":
-            post = db.query(posts).filter(posts.id == txn.source_id).first()
-            if post:
-                post.status = "boosted"
-                db.commit()
-
-        # subscribe / join_community: these were already recorded; no extra action needed
-        print(f"[payment-callback] txn={txn.id} APPROVED → paid")
-        return {"message": "Payment approved and recorded", "status": "paid"}
-
-    elif decision == "rejected":
-        txn.status = "unpaid"
-        db.commit()
-
-        # Deactivate the feature that was activated optimistically
-        if txn.source_type == "company_register":
-            user = db.query(registeruser).filter(registeruser.id == txn.source_id).first()
-            if user:
-                user.company_payment_status = "unpaid"
-                db.commit()
-
-        elif txn.source_type == "boost_post":
-            post = db.query(posts).filter(posts.id == txn.source_id).first()
-            if post and post.status == "boosted":
-                post.status = "approved"  # revert back to normal approved
-                db.commit()
-
-        elif txn.source_type == "join_community":
-            # Revert creator status — set profile status back to 'no'
-            profile_row = db.query(userprofile).filter(
-                userprofile.user_id == txn.source_id
-            ).first()
-            if profile_row:
-                profile_row.status = "no"
-                db.commit()
-            # Also remove community_creators entry
-            creator_row = db.query(community_creators).filter(
-                community_creators.creator_id == txn.source_id
-            ).first()
-            if creator_row:
-                db.delete(creator_row)
-                db.commit()
-
-        elif txn.source_type == "subscribe":
-            # Revert the subscription that was eagerly added
+    elif txn.source_type == "subscribe":
+        # source_id is the post_id that was clicked; find the creator via the post
+        post = db.query(posts).filter(posts.id == txn.source_id).first()
+        if post:
             sub_row = db.query(subscriptions).filter(
-                subscriptions.subscriber_user_id == txn.source_id
+                subscriptions.subscriber_user_id == current_user.user_id,
+                subscriptions.subscribed_to_user_id == post.user_id
             ).first()
-            # We need the subscribed_to_user_id too — look it up via post
-            # source_id for subscribe is post_id
-            post = db.query(posts).filter(posts.id == txn.source_id).first()
-            if post:
-                sub_row = db.query(subscriptions).filter(
-                    subscriptions.subscriber_user_id == txn.source_id,
-                    subscriptions.subscribed_to_user_id == post.user_id
-                ).first()
-                if sub_row:
-                    db.delete(sub_row)
-                    db.commit()
+            if sub_row:
+                db.delete(sub_row)
+                db.commit()
 
-        print(f"[payment-callback] txn={txn.id} REJECTED → unpaid, feature deactivated")
-        return {"message": "Payment rejected, feature deactivated", "status": "unpaid"}
-
-    else:
-        # Unknown decision — keep as pending
-        print(f"[payment-callback] txn={txn.id} unknown decision='{decision}', staying pending")
-        return {"message": "Unknown decision, transaction stays pending", "status": "pending"}
+    elif txn.source_type == "company_register":
+        user = db.query(registeruser).filter(registeruser.id == txn.source_id).first()
+        if user and user.company_payment_status != "unpaid":
+            user.company_payment_status = "unpaid"
+            db.commit()
 
 
 # ---------------------------------------------------
@@ -945,10 +876,11 @@ async def payment_status(
 ):
     """
     Returns the latest payment status for a given (source_type, source_id) pair.
-    Frontend polls this to know when to hide/show the payment UI.
-    - paid    → feature is active, no payment UI
-    - pending → feature is active, awaiting confirmation
-    - unpaid  → feature is deactivated, show payment UI again
+    If the status is 'unpaid', automatically reverts the DB state so the feature
+    is properly deactivated without needing a separate callback.
+    - paid    → feature is active
+    - pending → feature is active, awaiting manual confirmation
+    - unpaid  → feature deactivated, frontend re-shows payment UI
     - none    → no transaction found
     """
     txn = db.query(payment_transactions).filter(
@@ -959,7 +891,41 @@ async def payment_status(
     if not txn:
         return {"status": "none", "message": "No transaction found"}
 
+    # Auto-revert side effects the moment we detect 'unpaid'
+    if txn.status == "unpaid":
+        _revert_unpaid_feature(txn, current_user, db)
+
     return {"status": txn.status, "message": f"Payment is {txn.status}"}
+
+
+# ---------------------------------------------------
+# COMMUNITY PAYMENT STATUS  (join_community check)
+# ---------------------------------------------------
+
+@router.get("/community-payment-status", response_model=PaymentStatusResponse)
+async def community_payment_status(
+    current_user: userprofile = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Check and enforce the community-join payment for the currently logged-in user.
+    Frontend calls this on load whenever communityStatus == 'yes'.
+    If 'unpaid', automatically reverts profile.status to 'no' and removes
+    the community_creators row so the Join Community button reappears.
+    """
+    txn = db.query(payment_transactions).filter(
+        payment_transactions.source_type == "join_community",
+        payment_transactions.source_id == current_user.user_id
+    ).order_by(payment_transactions.id.desc()).first()
+
+    if not txn:
+        return {"status": "none", "message": "No community payment found"}
+
+    if txn.status == "unpaid":
+        _revert_unpaid_feature(txn, current_user, db)
+
+    return {"status": txn.status, "message": f"Community payment is {txn.status}"}
+
 
 
 # ---------------------------------------------------
@@ -974,8 +940,8 @@ async def boost_post(
 ):
     """
     Company-only: records the boost payment as PENDING and immediately marks
-    the post as boosted so the user isn't blocked. Macrodroid confirms payment
-    asynchronously via /payment-callback — if rejected the post reverts.
+    the post as boosted so the user isn't blocked. You manually update the DB
+    status to 'paid' or 'unpaid' after verifying the payment notification.
     """
     user = db.query(registeruser).filter(registeruser.id == current_user.user_id).first()
     if not user or user.user_type != "company":
@@ -1007,7 +973,6 @@ async def boost_post(
             f"&txn_id={data.transaction_id}"
             f"&amount=1"
             f"&source_id={data.post_id}"
-            f"&txn_db_id={txn.id}"
         )
         resp = requests.get(macro_url, timeout=10)
         print(f"[Macrodroid] boost webhook → {resp.status_code}")

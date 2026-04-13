@@ -391,7 +391,17 @@ const Dashboard = () => {
     const loadCommunityStatus = async () => {
         try {
             const response = await authService.communityStatus();
-            setCommunityStatus(response.data.status);
+            const status = response.data.status;
+            setCommunityStatus(status);
+            // If joined, verify the payment hasn't been marked unpaid manually
+            if (status === 'yes') {
+                try {
+                    const payRes = await authService.checkCommunityPaymentStatus();
+                    if (payRes.data?.status === 'unpaid') {
+                        setCommunityStatus('no'); // revert UI back to join button
+                    }
+                } catch (e) { /* ignore */ }
+            }
         } catch (error) {
             console.error('Error loading community status:', error);
         }
@@ -400,9 +410,29 @@ const Dashboard = () => {
     const loadPosts = async () => {
         try {
             const response = await authService.getPosts();
-            setPosts(response.data);
+            const loadedPosts = response.data;
+            setPosts(loadedPosts);
+            // On every load, check payment status for all subscribed posts
+            checkSubscriptionPayments(loadedPosts);
         } catch (error) {
             console.error('Error loading posts:', error);
+        }
+    };
+
+    // Silently check payment for every post the user is subscribed to.
+    // If any are unpaid, flag them for re-payment and remove the subscription UI.
+    const checkSubscriptionPayments = async (loadedPosts) => {
+        const subscribed = loadedPosts.filter(p => p.is_subscribed && p.can_subscribe);
+        for (const post of subscribed) {
+            try {
+                const res = await authService.checkPaymentStatus('subscribe', post.id);
+                if (res.data?.status === 'unpaid') {
+                    setRejectedPayments(prev => ({ ...prev, [post.id]: true }));
+                    setPosts(prev => prev.map(p =>
+                        p.id === post.id ? { ...p, is_subscribed: false } : p
+                    ));
+                }
+            } catch (e) { /* ignore per-post errors */ }
         }
     };
 

@@ -120,7 +120,6 @@ class community_creators(Base):
     creator_id = Column(Integer, ForeignKey("profile.id"), nullable=False, unique=True)
     name = Column(String(100), nullable=False)
     upi_id = Column(String(100), nullable=False)
-    subscription_fee = Column(Integer, default=0, nullable=False)
     joined_at = Column(DateTime, default=datetime.utcnow)
 
 

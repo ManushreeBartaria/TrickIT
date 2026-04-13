@@ -240,22 +240,6 @@ class BoostPostRequest(BaseModel):
 
 
 # ------------------------------------------------
-# MACRODROID CALLBACK  (Macrodroid → Backend)
-# ------------------------------------------------
-
-class MacrodroidCallbackRequest(BaseModel):
-    """
-    Body that Macrodroid POSTs to /payment-callback after the user
-    approves or rejects the payment notification on their phone.
-    """
-    transaction_id: str           # same txn_id that was forwarded earlier
-    decision: str                 # 'approved' or 'rejected'
-    txn_db_id: Optional[int] = None  # internal DB id passed as &txn_db_id=... param
-
-    model_config = {"from_attributes": True}
-
-
-# ------------------------------------------------
 # PAYMENT STATUS  (Frontend polling)
 # ------------------------------------------------
 

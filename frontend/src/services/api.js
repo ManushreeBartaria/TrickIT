@@ -47,6 +47,8 @@ export const authService = {
     // Poll this after verifyPayment; status: paid|pending|unpaid|none
     checkPaymentStatus: (source_type, source_id) =>
         api.get('/api/payment-status', { params: { source_type, source_id } }),
+    // Check community-join payment status for the current user (no params needed)
+    checkCommunityPaymentStatus: () => api.get('/api/community-payment-status'),
 };
 
 api.interceptors.request.use(
