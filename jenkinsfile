@@ -16,7 +16,7 @@ pipeline {
             steps {
                 
                     sh '''
-                    curl http://10.161.176.91:8000/api/check_pending
+                    curl http://10.182.191.100:8000/api/check_pending
                     '''
             }
         }
@@ -24,7 +24,7 @@ pipeline {
         stage('Trigger ML Pipeline') {
             steps {
                 sh '''
-                curl -X POST http://10.161.176.91:8000/api/retrain_pipeline
+                curl -X POST http://10.182.191.100:8000/api/retrain_pipeline
                 '''
             }
         }
