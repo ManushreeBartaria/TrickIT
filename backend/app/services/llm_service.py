@@ -45,6 +45,10 @@ Examples of EDUCATIONAL posts:
 - "Dynamic Programming trick for solving knapsack problems"
 - "3 tips to focus better while studying"
 - "How to understand neural networks easily"
+-"any tech related content"
+- "How to prepare for coding interviews"
+-"devops related content"
+-"any project building content"
 
 A post is NON_EDUCATIONAL if it contains:
 • greetings
